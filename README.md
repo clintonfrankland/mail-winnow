@@ -11,6 +11,7 @@ MailWinnow is a self-hosted email filtering and selective-delivery platform for 
 - `MailWinnow.Core` contains dependency-free entities, interfaces, rule logic, and shared models.
 - `MailWinnow.Infrastructure` contains implementations for EF Core, MailKit, encryption, and other external services. It may depend on Core, but Core never depends on it.
 - `MailWinnow.Tests` contains unit and integration tests. It may reference production projects but is not referenced by them.
+- `MailWinnow.DbMigrator` is the one-shot deployment utility that applies EF Core migrations.
 
 The hosts may reference Core and Infrastructure. Infrastructure may reference Core. These references establish the dependency direction and prevent circular dependencies.
 
@@ -24,7 +25,20 @@ dotnet build MailWinnow.sln --no-restore
 dotnet test MailWinnow.sln --no-build
 ```
 
-`Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. Database entities and EF Core migrations are added only alongside an implemented feature; this foundation deliberately introduces neither.
+`Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. The initial EF migration intentionally contains no application tables because no application entity model has been implemented yet.
+
+## Application migrations
+
+The application uses EF Core with SQL Server. `MailWinnowDbContext` reads the standard `ConnectionStrings:MailWinnow` configuration value, supplied in deployed environments through the scoped `ConnectionStrings__MailWinnow` variable. No host applies migrations during normal startup.
+
+After database provisioning, run the one-shot migrator separately in each isolated environment:
+
+```sh
+ConnectionStrings__MailWinnow='<application connection>' \
+dotnet run --project tools/MailWinnow.DbMigrator
+```
+
+The migrator applies pending migrations, reports failures with a non-zero exit code, and is safe to run again. Verify the resulting `__EFMigrationsHistory` entry before continuing from development to production.
 
 ## SQL Server provisioning
 

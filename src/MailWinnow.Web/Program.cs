@@ -1,9 +1,11 @@
 using MailWinnow.Web.Components;
+using MailWinnow.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents();
+builder.Services.AddMailWinnowSqlServer(builder.Configuration);
 
 var app = builder.Build();
 
