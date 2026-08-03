@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-MailWinnow.Worker-3ffe8aef-8c57-4be1-9b8a-bbb245b26a82</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MailWinnow.Core\MailWinnow.Core.csproj" />
+    <ProjectReference Include="..\MailWinnow.Infrastructure\MailWinnow.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
