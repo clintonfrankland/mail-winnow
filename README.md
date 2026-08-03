@@ -25,3 +25,19 @@ dotnet test MailWinnow.sln --no-build
 ```
 
 `Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. Database entities and EF Core migrations are added only alongside an implemented feature; this foundation deliberately introduces neither.
+
+## SQL Server provisioning
+
+Server-level provisioning is intentionally separate from application migrations. The credential-free `tools/MailWinnow.SqlProvisioner` utility idempotently creates or reconciles one database, its dedicated SQL login and user, and the database-local `db_owner` role needed by the controlled EF Core migration process. It removes fixed server-role membership and denies database enumeration; it does not create application tables or run EF Core migrations.
+
+Supply all inputs at runtime through environment variables:
+
+```sh
+MAILWINNOW_SQL_ADMIN_CONNECTION='<administrator connection>' \
+MAILWINNOW_SQL_DATABASE='MailWinnow_Dev' \
+MAILWINNOW_SQL_LOGIN='mailwinnow_dev' \
+MAILWINNOW_SQL_PASSWORD='<strong generated password>' \
+dotnet run --project tools/MailWinnow.SqlProvisioner
+```
+
+Use separate passwords for production and development. Store the resulting application connection strings only in Home Helm as secret `ConnectionStrings__MailWinnow` variables scoped to `Production` and `Review`; never commit them or deployed `.env` files.
