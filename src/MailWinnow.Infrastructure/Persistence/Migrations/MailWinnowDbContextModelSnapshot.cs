@@ -172,7 +172,8 @@ namespace MailWinnow.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<int>("EvaluationOutcome")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasDefaultValue(2);
 
                     b.Property<string>("FolderName")
                         .IsRequired()

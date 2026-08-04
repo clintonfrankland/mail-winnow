@@ -1,3 +1,4 @@
+using MailWinnow.Core.Rules;
 using MailWinnow.Infrastructure.Security;
 using MailWinnow.Infrastructure.Mailboxes;
 using MailWinnow.Infrastructure.Rules;
@@ -49,6 +50,8 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.Property(x => x.From).HasMaxLength(2000);
             entity.Property(x => x.To).HasMaxLength(2000);
             entity.Property(x => x.Subject).HasMaxLength(2000);
+            entity.Property(x => x.EvaluationOutcome)
+                .HasDefaultValue(RuleOutcome.Pending);
             entity.HasIndex(x => new { x.SourceMailboxId, x.FolderName, x.UidValidity, x.Uid }).IsUnique();
         });
         builder.Entity<MailRule>(entity =>
