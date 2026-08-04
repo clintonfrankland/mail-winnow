@@ -24,6 +24,7 @@ public interface IMailboxConfigurationService
     Task<IReadOnlyList<SourceMailboxSummary>> ListSourcesAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default);
     Task<DestinationMailboxSummary?> GetDestinationAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default);
     Task<MailboxOperationResult> SaveSourceAsync(ClaimsPrincipal actor, Guid? id, SourceMailboxInput input, CancellationToken cancellationToken = default);
+    Task<MailboxOperationResult> SaveSourceFoldersAsync(ClaimsPrincipal actor, Guid id, IReadOnlyList<string>? selectedFolders, CancellationToken cancellationToken = default);
     Task<MailboxOperationResult> SetSourceEnabledAsync(ClaimsPrincipal actor, Guid id, bool enabled, CancellationToken cancellationToken = default);
     Task<MailboxOperationResult> TestSourceAsync(ClaimsPrincipal actor, Guid id, bool discoverFolders, CancellationToken cancellationToken = default);
     Task<MailboxOperationResult> SaveDestinationAsync(ClaimsPrincipal actor, DestinationMailboxInput input, CancellationToken cancellationToken = default);
@@ -83,6 +84,16 @@ public sealed class MailboxConfigurationService(
         if (source is null) return new(false, "Source mailbox was not found.");
         ownership.RequireOwner(actor, source.OwnerUserId);
         source.Enabled = enabled; await db.SaveChangesAsync(cancellationToken); return new(true, "Source mailbox updated.");
+    }
+
+    public async Task<MailboxOperationResult> SaveSourceFoldersAsync(ClaimsPrincipal actor, Guid id, IReadOnlyList<string>? selectedFolders, CancellationToken cancellationToken = default)
+    {
+        var source = await db.SourceMailboxes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (source is null) return new(false, "Source mailbox was not found.");
+        ownership.RequireOwner(actor, source.OwnerUserId);
+        source.SelectedFoldersJson = JsonSerializer.Serialize(NormalizeFolders(selectedFolders));
+        await db.SaveChangesAsync(cancellationToken);
+        return new(true, "Selected folders saved.");
     }
 
     public async Task<MailboxOperationResult> TestSourceAsync(ClaimsPrincipal actor, Guid id, bool discoverFolders, CancellationToken cancellationToken = default)

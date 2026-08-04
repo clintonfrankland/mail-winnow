@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\MailWinnow.Core\MailWinnow.Core.csproj" />
     <ProjectReference Include="..\..\src\MailWinnow.Infrastructure\MailWinnow.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\MailWinnow.Web\MailWinnow.Web.csproj" />
   </ItemGroup>
 
 </Project>

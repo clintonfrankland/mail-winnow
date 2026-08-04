@@ -5,6 +5,7 @@ using MailWinnow.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using MailWinnow.Web.Security;
 
 namespace MailWinnow.Tests.Mailboxes;
 
@@ -52,6 +53,36 @@ public sealed class MailboxConfigurationTests
     public void LocalImapInvalidCertificateDefaultsToFalse()
     {
         Assert.False(new LocalImapOptions().AllowInvalidCertificate);
+    }
+
+    [Fact]
+    public async Task DiscoveredFoldersCanBeSelectedAndSavedByTheirOwner()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(connection).Options;
+        await using var db = new MailWinnowDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new MailboxConfigurationService(db, new OwnershipAuthorizer(), new TestProtector(), Options.Create(new LocalImapOptions()));
+        var owner = Principal("owner");
+        await service.SaveSourceAsync(owner, null, new("Personal", "imap.example.test", 993, true, "owner@example.test", "secret", true, ["INBOX"]));
+        var source = Assert.Single(await service.ListSourcesAsync(owner));
+
+        var saved = await service.SaveSourceFoldersAsync(owner, source.Id, ["Archive", "INBOX", "Archive"]);
+
+        Assert.True(saved.Succeeded, saved.Message);
+        Assert.Equal(["Archive", "INBOX"], Assert.Single(await service.ListSourcesAsync(owner)).SelectedFolders);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveSourceFoldersAsync(Principal("other"), source.Id, ["Inbox"]));
+    }
+
+    [Fact]
+    public void DiscoveryRedirectCarriesSourceAndFoldersToTheMailboxesPage()
+    {
+        var sourceId = Guid.Parse("b9965995-77f0-4699-9ce9-5c6b4b892e83");
+
+        var url = MailboxEndpoints.BuildRedirectUrl(new(true, "Connection succeeded; folders discovered.", ["INBOX", "Family & Friends"]), sourceId);
+
+        Assert.Equal("/mailboxes?saved=Connection%20succeeded%3B%20folders%20discovered.&discoveredSourceId=b9965995-77f0-4699-9ce9-5c6b4b892e83&discoveredFolder=INBOX&discoveredFolder=Family%20%26%20Friends", url);
     }
 
     private static ClaimsPrincipal Principal(string id) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, id)], "Test"));
