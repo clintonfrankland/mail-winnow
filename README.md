@@ -55,3 +55,9 @@ dotnet run --project tools/MailWinnow.SqlProvisioner
 ```
 
 Use separate passwords for production and development. Store the resulting application connection strings only in Home Helm as secret `ConnectionStrings__MailWinnow` variables scoped to `Production` and `Review`; never commit them or deployed `.env` files.
+
+## Credential protection
+
+Mailbox passwords, app passwords, destination passwords, and future OAuth refresh tokens must be stored only through `ICredentialProtectionService`. The abstraction uses purpose-separated ASP.NET Core Data Protection payloads and never exposes a read/display model. A missing key-ring configuration or mount fails host startup, while corrupt payloads and unavailable keys raise a safe `CredentialProtectionException` without including plaintext.
+
+Both Web and Worker read `DataProtection:KeyRingPath` (`DataProtection__KeyRingPath` as an environment variable) and use the fixed `MailWinnow` application discriminator. In containers, merge `deploy/compose.data-protection.yaml` into the deployment Compose configuration so both services mount the same named volume. Back up this volume with the database: losing its key files makes saved credentials intentionally undecryptable.

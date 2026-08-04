@@ -11,6 +11,7 @@
 # Local secrets and environment overrides
 secrets.json
 appsettings.Local.json
+data-protection-keys/
 
 # EF tooling on Unix can emit BuildHost artifacts under a literal backslash path.
 **/bin\\Debug/

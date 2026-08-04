@@ -1,0 +1,17 @@
+# Merge this file with the deployment Compose file. Service names are intentionally
+# shared with the Web/Worker deployment so both processes use the same key ring.
+services:
+  web:
+    environment:
+      DataProtection__KeyRingPath: /var/lib/mailwinnow/data-protection-keys
+    volumes:
+      - mailwinnow-data-protection:/var/lib/mailwinnow/data-protection-keys
+
+  worker:
+    environment:
+      DataProtection__KeyRingPath: /var/lib/mailwinnow/data-protection-keys
+    volumes:
+      - mailwinnow-data-protection:/var/lib/mailwinnow/data-protection-keys
+
+volumes:
+  mailwinnow-data-protection:

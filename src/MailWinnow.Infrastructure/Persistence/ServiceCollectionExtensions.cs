@@ -21,7 +21,7 @@ public static class ServiceCollectionExtensions
                 ?? throw new InvalidOperationException(
                     "The ConnectionStrings:MailWinnow configuration value is required.")));
 
-        services.AddDataProtection();
+        services.AddMailWinnowCredentialProtection(configuration);
         services.AddIdentityCore<ApplicationUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
