@@ -41,6 +41,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
         services.AddScoped<IMailboxConfigurationService, MailboxConfigurationService>();
         services.AddScoped<IImapConnectionService, ImapConnectionService>();
+        services.AddScoped<ISourceMailboxSyncLockProvider, SqlServerAccountLockProvider>();
         services.AddScoped<ISourceMailboxSynchronizer, SourceMailboxSynchronizer>();
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
         return services;

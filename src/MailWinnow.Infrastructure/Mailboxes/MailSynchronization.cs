@@ -54,17 +54,24 @@ public sealed class MailSyncQueue(IServiceScopeFactory scopes) : IMailSyncQueue
 
 public interface ISourceMailboxSynchronizer { Task SynchronizeAsync(Guid sourceMailboxId, CancellationToken cancellationToken = default); }
 
+/// <summary>Acquires a per-account synchronization lease. A missing lease means another worker is active.</summary>
+public interface ISourceMailboxSyncLockProvider
+{
+    Task<IAsyncDisposable?> TryAcquireAsync(MailWinnowDbContext db, Guid sourceMailboxId, CancellationToken cancellationToken = default);
+}
+
 public sealed class SourceMailboxSynchronizer(
     MailWinnowDbContext db,
     ICredentialProtectionService credentials,
     IImapConnectionService imap,
-    IOptions<MailSyncOptions> options) : ISourceMailboxSynchronizer
+    IOptions<MailSyncOptions> options,
+    ISourceMailboxSyncLockProvider locks) : ISourceMailboxSynchronizer
 {
     public async Task SynchronizeAsync(Guid sourceMailboxId, CancellationToken cancellationToken = default)
     {
         var source = await db.SourceMailboxes.SingleOrDefaultAsync(x => x.Id == sourceMailboxId, cancellationToken);
         if (source is null || !source.Enabled) return;
-        await using var accountLock = await SqlServerAccountLock.TryAcquireAsync(db, source.Id, cancellationToken);
+        await using var accountLock = await locks.TryAcquireAsync(db, source.Id, cancellationToken);
         if (accountLock is null) return; // a different worker owns this account; its work is sufficient.
 
         source.LastSyncAttemptUtc = DateTimeOffset.UtcNow;
@@ -119,9 +126,15 @@ public sealed class SourceMailboxSynchronizer(
     }
 }
 
+public sealed class SqlServerAccountLockProvider : ISourceMailboxSyncLockProvider
+{
+    public Task<IAsyncDisposable?> TryAcquireAsync(MailWinnowDbContext db, Guid sourceMailboxId, CancellationToken cancellationToken = default) =>
+        SqlServerAccountLock.TryAcquireAsync(db, sourceMailboxId, cancellationToken);
+}
+
 internal sealed class SqlServerAccountLock(MailWinnowDbContext db, string resource) : IAsyncDisposable
 {
-    public static async Task<SqlServerAccountLock?> TryAcquireAsync(MailWinnowDbContext db, Guid id, CancellationToken cancellationToken)
+    public static async Task<IAsyncDisposable?> TryAcquireAsync(MailWinnowDbContext db, Guid id, CancellationToken cancellationToken)
     {
         var connection = db.Database.GetDbConnection();
         await connection.OpenAsync(cancellationToken);
@@ -129,7 +142,7 @@ internal sealed class SqlServerAccountLock(MailWinnowDbContext db, string resour
         command.CommandText = "DECLARE @result int; EXEC @result = sp_getapplock @Resource=@resource, @LockMode='Exclusive', @LockOwner='Session', @LockTimeout=0; SELECT @result;";
         var parameter = command.CreateParameter(); parameter.ParameterName = "@resource"; parameter.Value = $"MailWinnow:Sync:{id:N}"; command.Parameters.Add(parameter);
         var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
-        if (result >= 0) return new(db, (string)parameter.Value);
+        if (result >= 0) return new SqlServerAccountLock(db, (string)parameter.Value);
         await connection.CloseAsync();
         return null;
     }

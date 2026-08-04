@@ -14,6 +14,7 @@
         <strong>@source.DisplayName</strong> — @source.Username@@@source.Host:@source.Port (@(source.UseSsl ? "TLS" : "STARTTLS"))
         <div>@(source.Enabled ? "Enabled" : "Disabled") · @source.PollingStatus · @(source.LastSuccessfulConnectionUtc?.ToString("u") ?? "Not tested")</div>
         @if (!string.IsNullOrWhiteSpace(source.SanitizedError)) { <div class="text-danger">@source.SanitizedError</div> }
+        <form method="post" action="/mailboxes/source/sync" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><button class="btn btn-primary mt-2" disabled="@(!source.Enabled)">Sync now</button></form>
         <form method="post" action="/mailboxes/source/enabled" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@(!source.Enabled)" /><button class="btn btn-secondary mt-2">@(source.Enabled ? "Disable" : "Enable")</button></form>
         <form method="post" action="/mailboxes/source/test" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="DiscoverFolders" value="true" /><button class="btn btn-secondary mt-2">Test and discover folders</button></form>
         @if (DiscoveredSourceId == source.Id && DiscoveredFolders.Count > 0)
