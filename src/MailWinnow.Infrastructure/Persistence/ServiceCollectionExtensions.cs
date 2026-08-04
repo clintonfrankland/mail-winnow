@@ -1,3 +1,5 @@
+using MailWinnow.Infrastructure.Security;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,9 +16,26 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        return services.AddDbContext<MailWinnowDbContext>(options =>
+        services.AddDbContext<MailWinnowDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("MailWinnow")
                 ?? throw new InvalidOperationException(
                     "The ConnectionStrings:MailWinnow configuration value is required.")));
+
+        services.AddDataProtection();
+        services.AddIdentityCore<ApplicationUser>(options =>
+            {
+                options.User.RequireUniqueEmail = true;
+                options.Password.RequiredLength = 12;
+                options.Password.RequireNonAlphanumeric = false;
+            })
+            .AddRoles<IdentityRole>()
+            .AddSignInManager()
+            .AddEntityFrameworkStores<MailWinnowDbContext>()
+            .AddDefaultTokenProviders();
+
+        services.AddScoped<IFirstRunSetupService, FirstRunSetupService>();
+        services.AddScoped<IHouseholdAccountService, HouseholdAccountService>();
+        services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
+        return services;
     }
 }

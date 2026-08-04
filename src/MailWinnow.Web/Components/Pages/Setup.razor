@@ -1,0 +1,33 @@
+@page "/setup"
+@attribute [AllowAnonymous]
+@inject IFirstRunSetupService SetupService
+
+<PageTitle>First-run setup</PageTitle>
+<h1>Set up MailWinnow</h1>
+
+@if (_setupRequired)
+{
+    <p>Create the first household account. It will be the administrator.</p>
+    @if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <div class="alert alert-danger">@Error</div>
+    }
+    <form method="post" action="/auth/setup">
+        <AntiforgeryToken />
+        <div class="mb-3"><label>Email <input class="form-control" name="Email" type="email" required /></label></div>
+        <div class="mb-3"><label>Password <input class="form-control" name="Password" type="password" minlength="12" required /></label></div>
+        <button class="btn btn-primary" type="submit">Create administrator</button>
+    </form>
+}
+else
+{
+    <p>Setup is complete. Public registration is closed. <a href="login">Sign in</a>.</p>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    private bool _setupRequired;
+
+    protected override async Task OnInitializedAsync() =>
+        _setupRequired = await SetupService.IsSetupRequiredAsync();
+}

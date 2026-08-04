@@ -1,0 +1,52 @@
+@page "/admin/household"
+@attribute [Authorize(Policy = AuthConstants.AdministratorPolicy)]
+@inject IHouseholdAccountService Accounts
+
+<PageTitle>Household accounts</PageTitle>
+<h1>Household accounts</h1>
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+else if (Saved)
+{
+    <div class="alert alert-success">Account updated.</div>
+}
+
+<h2>Create account</h2>
+<form method="post" action="/auth/household/create" class="mb-4">
+    <AntiforgeryToken />
+    <input class="form-control mb-2" name="Email" type="email" placeholder="Email" required />
+    <input class="form-control mb-2" name="Password" type="password" minlength="12" placeholder="Temporary password" required />
+    <button class="btn btn-primary" type="submit">Create</button>
+</form>
+
+@foreach (var account in _accounts)
+{
+    <section class="card p-3 mb-3">
+        <strong>@account.Email</strong>
+        <span>@(account.IsAdministrator ? "Administrator" : "Household user") · @(account.IsEnabled ? "Enabled" : "Disabled")</span>
+        <form method="post" action="/auth/household/enabled" class="mt-2">
+            <AntiforgeryToken />
+            <input type="hidden" name="UserId" value="@account.Id" />
+            <input type="hidden" name="Enabled" value="@(!account.IsEnabled)" />
+            <button class="btn btn-secondary" type="submit">@(account.IsEnabled ? "Disable" : "Enable")</button>
+        </form>
+        <form method="post" action="/auth/household/password" class="mt-2">
+            <AntiforgeryToken />
+            <input type="hidden" name="UserId" value="@account.Id" />
+            <input class="form-control mb-2" name="Password" type="password" minlength="12" placeholder="New password" required />
+            <button class="btn btn-secondary" type="submit">Reset password</button>
+        </form>
+    </section>
+}
+
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public bool Saved { get; set; }
+    private IReadOnlyList<HouseholdAccount> _accounts = [];
+
+    protected override async Task OnInitializedAsync() =>
+        _accounts = await Accounts.ListAsync(HttpContext.User);
+}

@@ -14,10 +14,25 @@
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
+        <AuthorizeView Roles="Administrator">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin/household">
+                    <span class="bi bi-people-fill-nav-menu" aria-hidden="true"></span> Household
+                </NavLink>
+            </div>
+        </AuthorizeView>
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <form method="post" action="/auth/logout">
+                        <AntiforgeryToken />
+                        <button class="nav-link btn btn-link" type="submit">Sign out</button>
+                    </form>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3"><NavLink class="nav-link" href="login">Sign in</NavLink></div>
+            </NotAuthorized>
+        </AuthorizeView>
     </nav>
 </div>
