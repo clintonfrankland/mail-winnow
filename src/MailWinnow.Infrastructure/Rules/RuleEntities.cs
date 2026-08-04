@@ -4,6 +4,8 @@ namespace MailWinnow.Infrastructure.Rules;
 
 public sealed class MailRule
 {
+    public const int DefaultDeliveredMessageRetentionDays = 30;
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public required string OwnerUserId { get; set; }
     public RuleAction Action { get; set; }
@@ -14,7 +16,7 @@ public sealed class MailRule
     public DateTimeOffset? EffectiveUtc { get; set; }
     public DateTimeOffset? ExpiresUtc { get; set; }
     /// <summary>Retention policy for delivered copies. It is deliberately not an expiry date.</summary>
-    public int? DeliveredMessageRetentionDays { get; set; }
+    public int DeliveredMessageRetentionDays { get; set; } = DefaultDeliveredMessageRetentionDays;
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 

@@ -86,6 +86,8 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
     private static void Validate(MailRule rule)
     {
         if (string.IsNullOrWhiteSpace(rule.OwnerUserId) || string.IsNullOrWhiteSpace(rule.MatchValue)) throw new ArgumentException("Rule owner and match value are required.", nameof(rule));
+        if (rule.Action is not (RuleAction.PermanentlyAllow or RuleAction.TemporarilyAllow or RuleAction.PermanentlyBlock))
+            throw new ArgumentException("Reusable rules must be permanent allow, temporary allow, or permanent block.", nameof(rule));
         if (rule.Scope == RuleScope.SourceAccount && rule.SourceMailboxId is null) throw new ArgumentException("Account-scoped rules require a source mailbox.", nameof(rule));
         if (rule.Scope == RuleScope.User && rule.SourceMailboxId is not null) throw new ArgumentException("User-scoped rules cannot target a source mailbox.", nameof(rule));
         if (rule.Action == RuleAction.TemporarilyAllow && (!rule.EffectiveUtc.HasValue || !rule.ExpiresUtc.HasValue || rule.EffectiveUtc >= rule.ExpiresUtc)) throw new ArgumentException("Temporary allows require an effective time before their expiration.", nameof(rule));

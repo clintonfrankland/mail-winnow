@@ -41,6 +41,39 @@ public sealed class RuleEvaluationServiceTests
         }));
     }
 
+    [Theory]
+    [InlineData(RuleAction.ApproveOneMessage)]
+    [InlineData(RuleAction.PendingReview)]
+    public async Task AddOrUpdate_RejectsMessageOnlyActions(RuleAction action)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var service = new RuleManagementService(fixture.Db, new RuleEvaluationService(fixture.Db));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.AddOrUpdateAsync(new MailRule
+        {
+            OwnerUserId = "owner", Action = action, Scope = RuleScope.User,
+            MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test"
+        }));
+    }
+
+    [Fact]
+    public async Task AddOrUpdate_PersistsDefaultDeliveredMessageRetention()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var service = new RuleManagementService(fixture.Db, new RuleEvaluationService(fixture.Db));
+        var rule = new MailRule
+        {
+            OwnerUserId = "owner", Action = RuleAction.PermanentlyAllow, Scope = RuleScope.User,
+            MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test"
+        };
+
+        await service.AddOrUpdateAsync(rule);
+
+        var stored = await fixture.Db.MailRules.FindAsync(rule.Id);
+        Assert.NotNull(stored);
+        Assert.Equal(MailRule.DefaultDeliveredMessageRetentionDays, stored.DeliveredMessageRetentionDays);
+    }
+
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db) : IAsyncDisposable
     {
         public MailWinnowDbContext Db { get; } = db;
