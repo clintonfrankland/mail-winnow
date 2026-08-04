@@ -42,6 +42,7 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>();
 app.MapAccountEndpoints();
 app.MapMailboxEndpoints();
+app.MapReviewEndpoints();
 
 app.Run();
 

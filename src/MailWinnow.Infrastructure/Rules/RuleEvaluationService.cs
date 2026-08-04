@@ -47,6 +47,7 @@ public interface IRuleManagementService
     Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default);
     Task DeleteAsync(string ownerUserId, Guid ruleId, CancellationToken cancellationToken = default);
     Task SetMessageDecisionAsync(MessageDecision decision, CancellationToken cancellationToken = default);
+    Task DeleteMessageDecisionAsync(string ownerUserId, Guid headerId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Writes rules only after validating their scope, temporary dates, and ownership.</summary>
@@ -60,7 +61,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         var existing = await db.MailRules.SingleOrDefaultAsync(x => x.Id == rule.Id && x.OwnerUserId == rule.OwnerUserId, cancellationToken);
         if (existing is null) db.MailRules.Add(rule); else db.Entry(existing).CurrentValues.SetValues(rule);
         await db.SaveChangesAsync(cancellationToken);
-        await evaluation.ReevaluatePendingHeadersAsync(rule.OwnerUserId, cancellationToken);
+        await ReevaluateOwnedHeadersAsync(rule.OwnerUserId, cancellationToken);
     }
 
     public async Task DeleteAsync(string ownerUserId, Guid ruleId, CancellationToken cancellationToken = default)
@@ -69,7 +70,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
             ?? throw new InvalidOperationException("The rule was not found for this user.");
         db.MailRules.Remove(rule);
         await db.SaveChangesAsync(cancellationToken);
-        await evaluation.ReevaluatePendingHeadersAsync(ownerUserId, cancellationToken);
+        await ReevaluateOwnedHeadersAsync(ownerUserId, cancellationToken);
     }
 
     public async Task SetMessageDecisionAsync(MessageDecision decision, CancellationToken cancellationToken = default)
@@ -81,6 +82,22 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         if (existing is null) db.MessageDecisions.Add(decision); else db.Entry(existing).CurrentValues.SetValues(decision);
         await db.SaveChangesAsync(cancellationToken);
         await evaluation.EvaluateAsync(decision.OwnerUserId, decision.SourceMessageHeaderId, DateTimeOffset.UtcNow, cancellationToken);
+    }
+
+    public async Task DeleteMessageDecisionAsync(string ownerUserId, Guid headerId, CancellationToken cancellationToken = default)
+    {
+        var decision = await db.MessageDecisions.SingleOrDefaultAsync(x => x.OwnerUserId == ownerUserId && x.SourceMessageHeaderId == headerId, cancellationToken)
+            ?? throw new InvalidOperationException("The message decision was not found for this user.");
+        db.MessageDecisions.Remove(decision);
+        await db.SaveChangesAsync(cancellationToken);
+        await evaluation.EvaluateAsync(ownerUserId, headerId, DateTimeOffset.UtcNow, cancellationToken);
+    }
+
+    private async Task ReevaluateOwnedHeadersAsync(string ownerUserId, CancellationToken cancellationToken)
+    {
+        var ids = await db.SourceMessageHeaders.Where(x => db.SourceMailboxes.Any(m => m.Id == x.SourceMailboxId && m.OwnerUserId == ownerUserId)).Select(x => x.Id).ToListAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var id in ids) await evaluation.EvaluateAsync(ownerUserId, id, now, cancellationToken);
     }
 
     private static void Validate(MailRule rule)

@@ -46,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISourceMailboxSynchronizer, SourceMailboxSynchronizer>();
         services.AddScoped<IRuleEvaluationService, RuleEvaluationService>();
         services.AddScoped<IRuleManagementService, RuleManagementService>();
+        services.AddScoped<IMessageReviewService, MessageReviewService>();
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
         return services;
     }

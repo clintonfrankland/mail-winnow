@@ -1,0 +1,57 @@
+@page "/review"
+@attribute [Authorize]
+@inject IMessageReviewService ReviewService
+@inject IMailboxConfigurationService MailboxService
+
+<PageTitle>Message review</PageTitle>
+<h1>Message review</h1>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
+@if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
+
+<form method="get" class="card p-3 mb-3" aria-label="Message filters">
+    <input type="hidden" name="view" value="@View" />
+    <label>Account <select class="form-select" name="sourceMailboxId"><option value="">All accounts</option>@foreach (var source in _sources) { <option value="@source.Id" selected="@(SourceMailboxId == source.Id)">@source.DisplayName</option> }</select></label>
+    <label>Status <select class="form-select" name="outcome"><option value="">All statuses</option><option value="Pending" selected="@(Outcome == RuleOutcome.Pending)">Pending review</option><option value="Allow" selected="@(Outcome == RuleOutcome.Allow)">Allowed</option><option value="Block" selected="@(Outcome == RuleOutcome.Block)">Blocked</option></select></label>
+    <label>Sender or subject <input class="form-control" name="search" value="@Search" /></label>
+    <button class="btn btn-primary mt-2">Filter</button>
+</form>
+
+<nav class="mb-3" aria-label="Review view"><a class="btn @(View == "recent" ? "btn-primary" : "btn-outline-primary")" href="@Link("recent")">Recent</a> <a class="btn @(View == "sender" ? "btn-primary" : "btn-outline-primary")" href="@Link("sender")">By sender</a> <a class="btn @(View == "subject" ? "btn-primary" : "btn-outline-primary")" href="@Link("subject")">By subject</a></nav>
+
+@if (View == "recent")
+{
+    <p>Newest first. Source status, local-delivery status, rule expiration, and delivered-copy deletion policy are separate fields.</p>
+    @foreach (var item in _recent)
+    {
+        <article class="card p-3 mb-2"><h2 class="h5">@item.Subject</h2><div>@item.Sender · @item.Account · @item.ReceivedUtc.ToString("u")</div><div><strong>Review:</strong> @item.Outcome · <strong>@item.SourceStatus</strong></div><div><strong>Local delivery:</strong> @item.DeliveryStatus</div><div><strong>Rule:</strong> @item.RuleContext</div><div><strong>@item.RetentionContext</strong></div>
+            <form method="post" action="/review/message/approve" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@item.Id" /><button class="btn btn-sm btn-success mt-2">Approve this message</button></form>
+            <form method="post" action="/review/message/undo" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@item.Id" /><button class="btn btn-sm btn-outline-secondary mt-2">Undo one-message decision</button></form>
+            <details class="d-inline"><summary class="btn btn-sm btn-outline-primary mt-2">Apply to matching</summary><form method="post" action="/review/rule"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@item.Sender" /><input type="hidden" name="MatchType" value="ExactSender" /><input type="hidden" name="RetentionDays" value="30" /><button name="Action" value="PermanentlyAllow" class="btn btn-sm btn-success">Always allow sender</button><button name="Action" value="PermanentlyBlock" class="btn btn-sm btn-danger">Block sender</button><button name="Action" value="TemporarilyAllow" class="btn btn-sm btn-warning">Allow 7 days</button></form></details>
+        </article>
+    }
+}
+else
+{
+    var groups = View == "sender" ? _senders : _subjects;
+    @foreach (var group in groups) { <article class="card p-3 mb-2"><h2 class="h5">@group.Value</h2><div>@group.Count messages · newest @group.MostRecentUtc.ToString("u")</div><div><strong>Samples:</strong> @string.Join("; ", group.Samples)</div><div><strong>Matching context:</strong> @string.Join("; ", group.RuleContexts)</div></article> }
+}
+
+<h2>Active reusable decisions</h2>
+@foreach (var rule in _rules) { <article class="card p-2 mb-2"><strong>@rule.Action</strong> · @rule.MatchType: @rule.MatchValue<br />Rule expiration: @(rule.ExpiresUtc?.ToString("u") ?? "Permanent")<br />Delivered-copy deletion: @rule.RetentionDays days after local delivery<form method="post" action="/review/rule/delete"><AntiforgeryToken /><input type="hidden" name="Id" value="@rule.Id" /><button class="btn btn-sm btn-outline-danger">Undo / remove rule</button></form></article> }
+
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
+    [SupplyParameterFromQuery] public string? View { get; set; }
+    [SupplyParameterFromQuery] public Guid? SourceMailboxId { get; set; }
+    [SupplyParameterFromQuery] public RuleOutcome? Outcome { get; set; }
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? Saved { get; set; }
+    private IReadOnlyList<SourceMailboxSummary> _sources = [];
+    private IReadOnlyList<MessageReviewItem> _recent = [];
+    private IReadOnlyList<MessageReviewGroup> _senders = [];
+    private IReadOnlyList<MessageReviewGroup> _subjects = [];
+    private IReadOnlyList<ReviewRule> _rules = [];
+    protected override async Task OnInitializedAsync() { View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; var filter = new MessageReviewFilter(SourceMailboxId, Outcome, Search); _sources = await MailboxService.ListSourcesAsync(HttpContext.User); _recent = await ReviewService.GetRecentAsync(HttpContext.User, filter); if (View == "sender") _senders = await ReviewService.GetBySenderAsync(HttpContext.User, filter); if (View == "subject") _subjects = await ReviewService.GetBySubjectAsync(HttpContext.User, filter); _rules = await ReviewService.GetRulesAsync(HttpContext.User); }
+    private string Link(string view) => $"/review?view={view}&sourceMailboxId={SourceMailboxId}&outcome={Outcome}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
+}
