@@ -26,59 +26,60 @@ public sealed record ImapOperationResult<T>(bool Succeeded, T? Value, ImapFailur
     public static ImapOperationResult<T> Failure(ImapFailureKind kind, string error) => new(false, default, kind, error);
 }
 
-public sealed class ImapConnectionService : IImapConnectionService
+/// <summary>Transport selection that deliberately has no opportunistic/downgradeable TLS option.</summary>
+public enum ImapTransportSecurity { SslOnConnect, StartTlsRequired }
+
+/// <summary>Test seam for the IMAP protocol operations used by MailWinnow.</summary>
+public interface IImapClientSession : IAsyncDisposable
 {
-    private static readonly string[] HeaderFields = ["Message-ID", "Date", "From", "Sender", "Reply-To", "To", "Cc", "Subject", "Authentication-Results"];
+    Task ConnectAsync(string host, int port, ImapTransportSecurity security, CancellationToken cancellationToken);
+    Task AuthenticateAsync(string username, string password, CancellationToken cancellationToken);
+    Task<IReadOnlyList<string>> ListFoldersAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<ImapMessageHeader>> FetchHeadersAsync(string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity, CancellationToken cancellationToken);
+    Task<MimeMessage> FetchMessageAsync(string folderName, uint uid, uint? expectedUidValidity, CancellationToken cancellationToken);
+    Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken);
+    Task DeleteAndExpungeAsync(string folderName, IReadOnlyList<uint> uids, CancellationToken cancellationToken);
+    Task DisconnectAsync(CancellationToken cancellationToken);
+}
+
+public interface IImapClientSessionFactory { IImapClientSession Create(); }
+
+public sealed class ImapClientSessionFactory : IImapClientSessionFactory
+{
+    public IImapClientSession Create() => new MailKitImapClientSession();
+}
+
+public sealed class ImapConnectionService(IImapClientSessionFactory? sessions = null) : IImapConnectionService
+{
+    private readonly IImapClientSessionFactory _sessions = sessions ?? new ImapClientSessionFactory();
 
     public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default) =>
-        WithClientAsync(connection, async (client, token) => { _ = client.PersonalNamespaces; await Task.CompletedTask; return true; }, cancellationToken);
+        WithSessionAsync(connection, (_, _) => Task.FromResult(true), cancellationToken);
 
     public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default) =>
-        WithClientAsync(connection, async (client, token) =>
-        {
-            var ns = client.PersonalNamespaces.FirstOrDefault();
-            if (ns is null) return (IReadOnlyList<string>)[];
-            var folders = await client.GetFoldersAsync(ns, StatusItems.None, false, token);
-            return folders.Select(x => x.FullName).Order(StringComparer.Ordinal).ToArray();
-        }, cancellationToken);
+        WithSessionAsync(connection, (session, token) => session.ListFoldersAsync(token), cancellationToken);
 
-    public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity = null, CancellationToken cancellationToken = default) =>
-        WithClientAsync(connection, async (client, token) =>
-        {
-            var folder = await OpenFolderAsync(client, folderName, FolderAccess.ReadOnly, expectedUidValidity, token);
-            var ids = uids.Where(x => x > 0).Select(x => new UniqueId(x)).ToArray();
-            if (ids.Length == 0) return (IReadOnlyList<ImapMessageHeader>)[];
-            // This request explicitly asks for selected RFC headers only; it never requests a body.
-            var summaries = await folder.FetchAsync(ids, MessageSummaryItems.UniqueId | MessageSummaryItems.Headers, HeaderFields, token);
-            return summaries.Select(x => new ImapMessageHeader(x.UniqueId.Id, Header(x, "Message-ID"), ParseDate(Header(x, "Date")), Header(x, "From"), Header(x, "Sender"), Header(x, "Reply-To"), Header(x, "To"), Header(x, "Cc"), Header(x, "Subject"), Header(x, "Authentication-Results"))).ToArray();
-        }, cancellationToken);
+    public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity = null, CancellationToken cancellationToken = default)
+    {
+        var ids = uids.Where(x => x > 0).Distinct().ToArray();
+        return ids.Length == 0
+            ? Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success([]))
+            : WithSessionAsync(connection, (session, token) => session.FetchHeadersAsync(folderName, ids, expectedUidValidity, token), cancellationToken);
+    }
 
     public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings connection, string folderName, uint uid, uint? expectedUidValidity = null, CancellationToken cancellationToken = default) =>
-        WithClientAsync(connection, async (client, token) =>
-        {
-            var folder = await OpenFolderAsync(client, folderName, FolderAccess.ReadOnly, expectedUidValidity, token);
-            return await folder.GetMessageAsync(new UniqueId(uid), token);
-        }, cancellationToken);
+        WithSessionAsync(connection, (session, token) => session.FetchMessageAsync(folderName, uid, expectedUidValidity, token), cancellationToken);
 
     public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default) =>
-        WithClientAsync(connection, async (client, token) =>
-        {
-            var folder = await OpenFolderAsync(client, folderName, FolderAccess.ReadWrite, null, token);
-            var uid = await folder.AppendAsync(message, MessageFlags.None, token);
-            return uid?.Id;
-        }, cancellationToken);
+        WithSessionAsync(connection, (session, token) => session.AppendMessageAsync(folderName, message, token), cancellationToken);
 
-    public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> expiredUids, CancellationToken cancellationToken = default) =>
-        WithClientAsync(connection, async (client, token) =>
-        {
-            var ids = expiredUids.Where(x => x > 0).Distinct().Select(x => new UniqueId(x)).ToArray();
-            if (ids.Length == 0) return 0;
-            var folder = await OpenFolderAsync(client, folderName, FolderAccess.ReadWrite, null, token);
-            await folder.AddFlagsAsync(ids, MessageFlags.Deleted, true, token);
-            // UID EXPUNGE limits removal to the explicit set; never expunge unrelated deleted mail.
-            await folder.ExpungeAsync(ids, token);
-            return ids.Length;
-        }, cancellationToken);
+    public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> expiredUids, CancellationToken cancellationToken = default)
+    {
+        var ids = expiredUids.Where(x => x > 0).Distinct().ToArray();
+        return ids.Length == 0
+            ? Task.FromResult(ImapOperationResult<int>.Success(0))
+            : WithSessionAsync(connection, async (session, token) => { await session.DeleteAndExpungeAsync(folderName, ids, token); return ids.Length; }, cancellationToken);
+    }
 
     /// <summary>Maps provider failures to safe categories without retaining server response text.</summary>
     public static ImapFailureKind ClassifyFailure(Exception exception) => Failure<object>(exception, CancellationToken.None).FailureKind;
@@ -99,44 +100,68 @@ public sealed class ImapConnectionService : IImapConnectionService
         };
         var message = kind switch
         {
-            ImapFailureKind.Authentication => "IMAP authentication was rejected.",
-            ImapFailureKind.MissingFolder => "The requested IMAP folder does not exist.",
-            ImapFailureKind.UidValidityChanged => "The IMAP folder was reset; synchronization must restart.",
-            ImapFailureKind.Timeout => "The IMAP operation timed out.",
-            ImapFailureKind.Throttled => "The IMAP provider temporarily throttled this mailbox.",
-            ImapFailureKind.Transient => "A temporary IMAP network failure occurred.",
-            ImapFailureKind.Connection => "Unable to establish a secure IMAP connection.",
-            _ => "The IMAP operation could not be completed."
+            ImapFailureKind.Authentication => "IMAP authentication was rejected.", ImapFailureKind.MissingFolder => "The requested IMAP folder does not exist.",
+            ImapFailureKind.UidValidityChanged => "The IMAP folder was reset; synchronization must restart.", ImapFailureKind.Timeout => "The IMAP operation timed out.",
+            ImapFailureKind.Throttled => "The IMAP provider temporarily throttled this mailbox.", ImapFailureKind.Transient => "A temporary IMAP network failure occurred.",
+            ImapFailureKind.Connection => "Unable to establish a secure IMAP connection.", _ => "The IMAP operation could not be completed."
         };
         return ImapOperationResult<T>.Failure(kind, message);
     }
 
-    private static async Task<ImapOperationResult<T>> WithClientAsync<T>(ImapConnectionSettings connection, Func<ImapClient, CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    private async Task<ImapOperationResult<T>> WithSessionAsync<T>(ImapConnectionSettings connection, Func<IImapClientSession, CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(connection.Timeout ?? TimeSpan.FromSeconds(30));
+        await using var session = _sessions.Create();
         try
         {
-            using var client = new ImapClient { Timeout = (int)(connection.Timeout ?? TimeSpan.FromSeconds(30)).TotalMilliseconds };
-            await client.ConnectAsync(connection.Host, connection.Port, connection.UseSsl ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTlsWhenAvailable, timeout.Token);
-            await client.AuthenticateAsync(connection.Username, connection.Password, timeout.Token);
-            var result = await operation(client, timeout.Token);
-            if (client.IsConnected) await client.DisconnectAsync(true, timeout.Token);
+            await session.ConnectAsync(connection.Host, connection.Port, connection.UseSsl ? ImapTransportSecurity.SslOnConnect : ImapTransportSecurity.StartTlsRequired, timeout.Token);
+            await session.AuthenticateAsync(connection.Username, connection.Password, timeout.Token);
+            var result = await operation(session, timeout.Token);
+            await session.DisconnectAsync(timeout.Token);
             return ImapOperationResult<T>.Success(result);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return ImapOperationResult<T>.Failure(ImapFailureKind.Timeout, "The IMAP operation timed out."); }
         catch (Exception exception) { return Failure<T>(exception, cancellationToken); }
     }
 
-    private static async Task<IMailFolder> OpenFolderAsync(ImapClient client, string folderName, FolderAccess access, uint? expectedUidValidity, CancellationToken cancellationToken)
-    {
-        var folder = await client.GetFolderAsync(folderName, cancellationToken);
-        await folder.OpenAsync(access, cancellationToken);
-        if (expectedUidValidity is > 0 && folder.UidValidity != expectedUidValidity) throw new UidValidityChangedException();
-        return folder;
-    }
+    internal sealed class UidValidityChangedException : Exception { }
+}
 
+internal sealed class MailKitImapClientSession : IImapClientSession
+{
+    private static readonly string[] HeaderFields = ["Message-ID", "Date", "From", "Sender", "Reply-To", "To", "Cc", "Subject", "Authentication-Results"];
+    private readonly ImapClient _client = new();
+
+    public Task ConnectAsync(string host, int port, ImapTransportSecurity security, CancellationToken cancellationToken) =>
+        _client.ConnectAsync(host, port, security == ImapTransportSecurity.SslOnConnect ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls, cancellationToken);
+    public Task AuthenticateAsync(string username, string password, CancellationToken cancellationToken) => _client.AuthenticateAsync(username, password, cancellationToken);
+    public async Task<IReadOnlyList<string>> ListFoldersAsync(CancellationToken cancellationToken)
+    {
+        var ns = _client.PersonalNamespaces.FirstOrDefault();
+        if (ns is null) return [];
+        return (await _client.GetFoldersAsync(ns, StatusItems.None, false, cancellationToken)).Select(x => x.FullName).Order(StringComparer.Ordinal).ToArray();
+    }
+    public async Task<IReadOnlyList<ImapMessageHeader>> FetchHeadersAsync(string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity, CancellationToken cancellationToken)
+    {
+        var folder = await OpenFolderAsync(folderName, FolderAccess.ReadOnly, expectedUidValidity, cancellationToken);
+        // The MailKit request includes RFC headers only, never a body section.
+        var summaries = await folder.FetchAsync(uids.Select(x => new UniqueId(x)).ToArray(), MessageSummaryItems.UniqueId | MessageSummaryItems.Headers, HeaderFields, cancellationToken);
+        return summaries.Select(x => new ImapMessageHeader(x.UniqueId.Id, Header(x, "Message-ID"), ParseDate(Header(x, "Date")), Header(x, "From"), Header(x, "Sender"), Header(x, "Reply-To"), Header(x, "To"), Header(x, "Cc"), Header(x, "Subject"), Header(x, "Authentication-Results"))).ToArray();
+    }
+    public async Task<MimeMessage> FetchMessageAsync(string folderName, uint uid, uint? expectedUidValidity, CancellationToken cancellationToken) => await (await OpenFolderAsync(folderName, FolderAccess.ReadOnly, expectedUidValidity, cancellationToken)).GetMessageAsync(new UniqueId(uid), cancellationToken);
+    public async Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken) => (await (await OpenFolderAsync(folderName, FolderAccess.ReadWrite, null, cancellationToken)).AppendAsync(message, MessageFlags.None, cancellationToken))?.Id;
+    public async Task DeleteAndExpungeAsync(string folderName, IReadOnlyList<uint> uids, CancellationToken cancellationToken)
+    {
+        var folder = await OpenFolderAsync(folderName, FolderAccess.ReadWrite, null, cancellationToken);
+        var ids = uids.Select(x => new UniqueId(x)).ToArray();
+        await folder.AddFlagsAsync(ids, MessageFlags.Deleted, true, cancellationToken);
+        await folder.ExpungeAsync(ids, cancellationToken); // UID EXPUNGE is restricted to the supplied IDs.
+    }
+    public Task DisconnectAsync(CancellationToken cancellationToken) => _client.IsConnected ? _client.DisconnectAsync(true, cancellationToken) : Task.CompletedTask;
+    public ValueTask DisposeAsync() { _client.Dispose(); return ValueTask.CompletedTask; }
+    private async Task<IMailFolder> OpenFolderAsync(string name, FolderAccess access, uint? expectedUidValidity, CancellationToken token)
+    { var folder = await _client.GetFolderAsync(name, token); await folder.OpenAsync(access, token); if (expectedUidValidity is > 0 && folder.UidValidity != expectedUidValidity) throw new ImapConnectionService.UidValidityChangedException(); return folder; }
     private static string? Header(IMessageSummary summary, string name) => summary.Headers?[name];
     private static DateTimeOffset? ParseDate(string? value) => DateTimeOffset.TryParse(value, out var date) ? date : null;
-    private sealed class UidValidityChangedException : Exception { }
 }
