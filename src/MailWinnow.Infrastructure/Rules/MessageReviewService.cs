@@ -30,7 +30,9 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
         var sourceQuery = db.SourceMailboxes.Where(x => x.OwnerUserId == owner);
         if (filter.SourceMailboxId is { } sourceId) sourceQuery = sourceQuery.Where(x => x.Id == sourceId);
         var sources = await sourceQuery.ToDictionaryAsync(x => x.Id, cancellationToken);
-        var headers = await db.SourceMessageHeaders.Where(x => sources.Keys.Contains(x.SourceMailboxId)).OrderByDescending(x => x.ReceivedUtc).ToListAsync(cancellationToken);
+        // Order after materialization because SQLite (used by the service tests) cannot order DateTimeOffset values.
+        var headers = (await db.SourceMessageHeaders.Where(x => sources.Keys.Contains(x.SourceMailboxId)).ToListAsync(cancellationToken))
+            .OrderByDescending(x => x.ReceivedUtc).ToList();
         var decisions = await db.MessageDecisions.Where(x => x.OwnerUserId == owner && headers.Select(h => h.Id).Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
         var rules = await db.MailRules.Where(x => x.OwnerUserId == owner).ToListAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow;

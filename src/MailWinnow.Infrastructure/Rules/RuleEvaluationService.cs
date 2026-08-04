@@ -45,6 +45,7 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db) : IRuleEvaluat
 public interface IRuleManagementService
 {
     Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default);
+    Task ReplaceAsync(string ownerUserId, Guid ruleId, MailRule replacement, CancellationToken cancellationToken = default);
     Task DeleteAsync(string ownerUserId, Guid ruleId, CancellationToken cancellationToken = default);
     Task SetMessageDecisionAsync(MessageDecision decision, CancellationToken cancellationToken = default);
     Task DeleteMessageDecisionAsync(string ownerUserId, Guid headerId, CancellationToken cancellationToken = default);
@@ -69,6 +70,22 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         var rule = await db.MailRules.SingleOrDefaultAsync(x => x.Id == ruleId && x.OwnerUserId == ownerUserId, cancellationToken)
             ?? throw new InvalidOperationException("The rule was not found for this user.");
         db.MailRules.Remove(rule);
+        await db.SaveChangesAsync(cancellationToken);
+        await ReevaluateOwnedHeadersAsync(ownerUserId, cancellationToken);
+    }
+
+    public async Task ReplaceAsync(string ownerUserId, Guid ruleId, MailRule replacement, CancellationToken cancellationToken = default)
+    {
+        if (replacement.OwnerUserId != ownerUserId)
+            throw new InvalidOperationException("A rule can only be replaced by its owner.");
+        Validate(replacement);
+        if (replacement.Scope == RuleScope.SourceAccount && !await db.SourceMailboxes.AnyAsync(x => x.Id == replacement.SourceMailboxId && x.OwnerUserId == ownerUserId, cancellationToken))
+            throw new InvalidOperationException("The source mailbox was not found for this user.");
+
+        var existing = await db.MailRules.SingleOrDefaultAsync(x => x.Id == ruleId && x.OwnerUserId == ownerUserId, cancellationToken)
+            ?? throw new InvalidOperationException("The rule was not found for this user.");
+        db.MailRules.Remove(existing);
+        db.MailRules.Add(replacement);
         await db.SaveChangesAsync(cancellationToken);
         await ReevaluateOwnedHeadersAsync(ownerUserId, cancellationToken);
     }

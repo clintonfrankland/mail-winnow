@@ -23,7 +23,13 @@ public static class ReviewEndpoints
         {
             var owner = ownership.RequireCurrentUserId(context.User);
             DateTimeOffset? expiry = request.Action == RuleAction.TemporarilyAllow ? request.ExpiresUtc ?? DateTimeOffset.UtcNow.AddDays(7) : null;
-            await rules.AddOrUpdateAsync(new MailRule { OwnerUserId = owner, Action = request.Action, Scope = RuleScope.User, MatchType = request.MatchType, MatchValue = request.MatchValue.Trim(), EffectiveUtc = expiry is null ? null : DateTimeOffset.UtcNow, ExpiresUtc = expiry, DeliveredMessageRetentionDays = request.RetentionDays }, ct);
+            var rule = new MailRule { OwnerUserId = owner, Action = request.Action, Scope = RuleScope.User, MatchType = request.MatchType, MatchValue = request.MatchValue.Trim(), EffectiveUtc = expiry is null ? null : DateTimeOffset.UtcNow, ExpiresUtc = expiry, DeliveredMessageRetentionDays = request.RetentionDays };
+            if (request.ReplaceRuleId is { } replaceRuleId)
+            {
+                await rules.ReplaceAsync(owner, replaceRuleId, rule, ct);
+                return Redirect("Rule replaced and matching stored messages refreshed.");
+            }
+            await rules.AddOrUpdateAsync(rule, ct);
             return Redirect("Decision applied to matching stored messages.");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Redirect(ex.Message, true); }
@@ -44,7 +50,7 @@ public static class ReviewEndpoints
         catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
     }
     private static IResult Redirect(string message, bool error = false) => Results.LocalRedirect("/review?" + (error ? "error=" : "saved=") + Uri.EscapeDataString(message));
-    public sealed record RuleRequest(RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays = MailRule.DefaultDeliveredMessageRetentionDays);
+    public sealed record RuleRequest(RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays = MailRule.DefaultDeliveredMessageRetentionDays, Guid? ReplaceRuleId = null);
     public sealed record RuleIdRequest(Guid Id);
     public sealed record HeaderRequest(Guid Id);
 }

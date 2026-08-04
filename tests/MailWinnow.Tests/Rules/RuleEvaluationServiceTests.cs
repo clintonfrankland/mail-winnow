@@ -4,6 +4,8 @@ using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Rules;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using MailWinnow.Infrastructure.Security;
 
 namespace MailWinnow.Tests.Rules;
 
@@ -73,6 +75,45 @@ public sealed class RuleEvaluationServiceTests
         Assert.NotNull(stored);
         Assert.Equal(MailRule.DefaultDeliveredMessageRetentionDays, stored.DeliveredMessageRetentionDays);
     }
+
+    [Fact]
+    public async Task ReplacingAnotherUsersRule_IsRejectedAndDoesNotChangeIt()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var rule = new MailRule
+        {
+            OwnerUserId = "other", Action = RuleAction.PermanentlyAllow, Scope = RuleScope.User,
+            MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test"
+        };
+        fixture.Db.MailRules.Add(rule);
+        await fixture.Db.SaveChangesAsync();
+        var service = new RuleManagementService(fixture.Db, new RuleEvaluationService(fixture.Db));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReplaceAsync("owner", rule.Id, new MailRule
+        {
+            OwnerUserId = "owner", Action = RuleAction.PermanentlyBlock, Scope = RuleScope.User,
+            MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test"
+        }));
+
+        Assert.Equal("other", (await fixture.Db.MailRules.FindAsync(rule.Id))!.OwnerUserId);
+    }
+
+    [Fact]
+    public async Task ReviewQueries_DoNotExposeAnotherUsersHeaders()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var own = await fixture.AddHeaderAsync("owner", "own@example.test", "Own");
+        await fixture.AddHeaderAsync("other", "other@example.test", "Other");
+        var review = new MessageReviewService(fixture.Db, new OwnershipAuthorizer());
+
+        var result = await review.GetRecentAsync(Principal("owner"), new MessageReviewFilter(null, null, null));
+
+        var item = Assert.Single(result);
+        Assert.Equal(own.Id, item.Id);
+        Assert.Equal("own@example.test", item.Sender);
+    }
+
+    private static ClaimsPrincipal Principal(string userId) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], "Test"));
 
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db) : IAsyncDisposable
     {
