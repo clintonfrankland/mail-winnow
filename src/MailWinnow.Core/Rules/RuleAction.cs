@@ -1,10 +1,11 @@
 namespace MailWinnow.Core.Rules;
 
-/// <summary>
-/// The action a mail-processing rule may request.
-/// </summary>
+/// <summary>The durable decisions supported by the first MailWinnow rule engine.</summary>
 public enum RuleAction
 {
-    Allow,
-    Block
+    PermanentlyAllow,
+    TemporarilyAllow,
+    PermanentlyBlock,
+    ApproveOneMessage,
+    PendingReview
 }

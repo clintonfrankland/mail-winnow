@@ -1,5 +1,6 @@
 using MailWinnow.Infrastructure.Security;
 using MailWinnow.Infrastructure.Mailboxes;
+using MailWinnow.Infrastructure.Rules;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -43,6 +44,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IImapConnectionService, ImapConnectionService>();
         services.AddScoped<ISourceMailboxSyncLockProvider, SqlServerAccountLockProvider>();
         services.AddScoped<ISourceMailboxSynchronizer, SourceMailboxSynchronizer>();
+        services.AddScoped<IRuleEvaluationService, RuleEvaluationService>();
+        services.AddScoped<IRuleManagementService, RuleManagementService>();
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
         return services;
     }

@@ -1,5 +1,7 @@
 namespace MailWinnow.Infrastructure.Mailboxes;
 
+using MailWinnow.Core.Rules;
+
 public sealed class SourceMailbox
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -45,6 +47,8 @@ public sealed class SourceMessageHeader
     public string? To { get; set; }
     public string? Subject { get; set; }
     public DateTimeOffset ReceivedUtc { get; set; }
+    public RuleOutcome EvaluationOutcome { get; set; } = RuleOutcome.Pending;
+    public DateTimeOffset? EvaluatedUtc { get; set; }
 }
 
 public sealed class DestinationMailbox

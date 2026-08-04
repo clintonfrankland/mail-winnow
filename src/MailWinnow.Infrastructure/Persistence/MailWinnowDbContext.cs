@@ -1,5 +1,6 @@
 using MailWinnow.Infrastructure.Security;
 using MailWinnow.Infrastructure.Mailboxes;
+using MailWinnow.Infrastructure.Rules;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,8 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
     public DbSet<DestinationMailbox> DestinationMailboxes => Set<DestinationMailbox>();
     public DbSet<SourceMailboxFolderSyncState> SourceMailboxFolderSyncStates => Set<SourceMailboxFolderSyncState>();
     public DbSet<SourceMessageHeader> SourceMessageHeaders => Set<SourceMessageHeader>();
+    public DbSet<MailRule> MailRules => Set<MailRule>();
+    public DbSet<MessageDecision> MessageDecisions => Set<MessageDecision>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -47,6 +50,19 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.Property(x => x.To).HasMaxLength(2000);
             entity.Property(x => x.Subject).HasMaxLength(2000);
             entity.HasIndex(x => new { x.SourceMailboxId, x.FolderName, x.UidValidity, x.Uid }).IsUnique();
+        });
+        builder.Entity<MailRule>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
+            entity.Property(x => x.MatchValue).HasMaxLength(2000).IsRequired();
+            entity.HasIndex(x => new { x.OwnerUserId, x.Scope, x.SourceMailboxId });
+        });
+        builder.Entity<MessageDecision>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
+            entity.HasIndex(x => new { x.OwnerUserId, x.SourceMessageHeaderId }).IsUnique();
         });
         builder.Entity<DestinationMailbox>(entity =>
         {
