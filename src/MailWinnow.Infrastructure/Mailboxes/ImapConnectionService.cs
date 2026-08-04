@@ -15,10 +15,12 @@ public interface IImapConnectionService
     Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> expiredUids, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default);
+    Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default);
 }
 
 public sealed record ImapConnectionSettings(string Host, int Port, bool UseSsl, string Username, string Password, TimeSpan? Timeout = null);
 public sealed record ImapMessageHeader(uint Uid, string? MessageId, DateTimeOffset? Date, string? From, string? Sender, string? ReplyTo, string? To, string? Cc, string? Subject, string? AuthenticationResults);
+public sealed record ImapFolderSnapshot(uint UidValidity, IReadOnlyList<uint> Uids);
 public enum ImapFailureKind { None, Authentication, Connection, Timeout, MissingFolder, UidValidityChanged, Throttled, Transient, Unexpected }
 public sealed record ImapOperationResult<T>(bool Succeeded, T? Value, ImapFailureKind FailureKind = ImapFailureKind.None, string? Error = null)
 {
@@ -40,6 +42,7 @@ public interface IImapClientSession : IAsyncDisposable
     Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken);
     Task DeleteAndExpungeAsync(string folderName, IReadOnlyList<uint> uids, CancellationToken cancellationToken);
     Task DisconnectAsync(CancellationToken cancellationToken);
+    Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken cancellationToken);
 }
 
 public interface IImapClientSessionFactory { IImapClientSession Create(); }
@@ -55,6 +58,9 @@ public sealed class ImapConnectionService(IImapClientSessionFactory? sessions = 
 
     public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default) =>
         WithSessionAsync(connection, (_, _) => Task.FromResult(true), cancellationToken);
+
+    public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default) =>
+        WithSessionAsync(connection, (session, token) => session.GetFolderSnapshotAsync(folderName, token), cancellationToken);
 
     public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default) =>
         WithSessionAsync(connection, (session, token) => session.ListFoldersAsync(token), cancellationToken);
@@ -159,6 +165,12 @@ internal sealed class MailKitImapClientSession : IImapClientSession
         await folder.ExpungeAsync(ids, cancellationToken); // UID EXPUNGE is restricted to the supplied IDs.
     }
     public Task DisconnectAsync(CancellationToken cancellationToken) => _client.IsConnected ? _client.DisconnectAsync(true, cancellationToken) : Task.CompletedTask;
+    public async Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken cancellationToken)
+    {
+        var folder = await OpenFolderAsync(folderName, FolderAccess.ReadOnly, null, cancellationToken);
+        var uids = await folder.SearchAsync(MailKit.Search.SearchQuery.All, cancellationToken);
+        return new(folder.UidValidity, uids.Select(x => x.Id).ToArray());
+    }
     public ValueTask DisposeAsync() { _client.Dispose(); return ValueTask.CompletedTask; }
     private async Task<IMailFolder> OpenFolderAsync(string name, FolderAccess access, uint? expectedUidValidity, CancellationToken token)
     { var folder = await _client.GetFolderAsync(name, token); await folder.OpenAsync(access, token); if (expectedUidValidity is > 0 && folder.UidValidity != expectedUidValidity) throw new ImapConnectionService.UidValidityChangedException(); return folder; }

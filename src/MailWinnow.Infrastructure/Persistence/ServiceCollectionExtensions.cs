@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
 
         services.AddMailWinnowCredentialProtection(configuration);
         services.Configure<LocalImapOptions>(configuration.GetSection(LocalImapOptions.SectionName));
+        services.Configure<MailSyncOptions>(configuration.GetSection(MailSyncOptions.SectionName));
         services.AddIdentityCore<ApplicationUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
@@ -40,6 +41,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
         services.AddScoped<IMailboxConfigurationService, MailboxConfigurationService>();
         services.AddScoped<IImapConnectionService, ImapConnectionService>();
+        services.AddScoped<ISourceMailboxSynchronizer, SourceMailboxSynchronizer>();
+        services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
         return services;
     }
 }

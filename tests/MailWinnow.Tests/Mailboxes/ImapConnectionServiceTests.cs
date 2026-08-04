@@ -89,6 +89,7 @@ public sealed class ImapConnectionServiceTests
         public Task<uint?> AppendMessageAsync(string folder, MimeMessage message, CancellationToken token) { Commands.Add($"append:{folder}"); AppendedMessage = message; return Task.FromResult(AppendedUid); }
         public Task DeleteAndExpungeAsync(string folder, IReadOnlyList<uint> uids, CancellationToken token) { Commands.Add($"delete-expunge:{folder}:{string.Join(',', uids)}"); DeletedUids = uids; return Task.CompletedTask; }
         public Task DisconnectAsync(CancellationToken token) { Commands.Add("disconnect"); return Task.CompletedTask; }
+        public Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken token) => Task.FromResult(new ImapFolderSnapshot(1, []));
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

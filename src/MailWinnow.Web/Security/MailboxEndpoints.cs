@@ -12,6 +12,7 @@ public static class MailboxEndpoints
         group.MapPost("/source/enabled", SetSourceEnabledAsync);
         group.MapPost("/source/test", TestSourceAsync);
         group.MapPost("/source/folders/save", SaveSourceFoldersAsync);
+        group.MapPost("/source/sync", QueueSyncAsync);
         group.MapPost("/destination/save", SaveDestinationAsync);
         return endpoints;
     }
@@ -27,6 +28,8 @@ public static class MailboxEndpoints
     }
     private static async Task<IResult> SaveSourceFoldersAsync(HttpContext context, [FromForm] SourceFoldersRequest request, IMailboxConfigurationService service, CancellationToken ct) =>
         Redirect(await service.SaveSourceFoldersAsync(context.User, request.Id, request.SelectedFolders, ct));
+    private static async Task<IResult> QueueSyncAsync(HttpContext context, [FromForm] SourceEnabledRequest request, IMailSyncQueue queue, CancellationToken ct) =>
+        Redirect(await queue.RequestAsync(context.User, request.Id, ct));
     private static async Task<IResult> SaveDestinationAsync(HttpContext context, [FromForm] DestinationRequest request, IMailboxConfigurationService service, CancellationToken ct) =>
         Redirect(await service.SaveDestinationAsync(context.User, new(request.Username, request.Password, request.Folder, request.Enabled), ct));
 

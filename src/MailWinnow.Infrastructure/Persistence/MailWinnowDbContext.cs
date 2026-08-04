@@ -13,6 +13,8 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
 {
     public DbSet<SourceMailbox> SourceMailboxes => Set<SourceMailbox>();
     public DbSet<DestinationMailbox> DestinationMailboxes => Set<DestinationMailbox>();
+    public DbSet<SourceMailboxFolderSyncState> SourceMailboxFolderSyncStates => Set<SourceMailboxFolderSyncState>();
+    public DbSet<SourceMessageHeader> SourceMessageHeaders => Set<SourceMessageHeader>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -29,6 +31,22 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.Property(x => x.PollingStatus).HasMaxLength(64);
             entity.Property(x => x.SanitizedError).HasMaxLength(512);
             entity.HasIndex(x => new { x.OwnerUserId, x.DisplayName });
+        });
+        builder.Entity<SourceMailboxFolderSyncState>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FolderName).HasMaxLength(500).IsRequired();
+            entity.HasIndex(x => new { x.SourceMailboxId, x.FolderName }).IsUnique();
+        });
+        builder.Entity<SourceMessageHeader>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FolderName).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.MessageId).HasMaxLength(998);
+            entity.Property(x => x.From).HasMaxLength(2000);
+            entity.Property(x => x.To).HasMaxLength(2000);
+            entity.Property(x => x.Subject).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.SourceMailboxId, x.FolderName, x.UidValidity, x.Uid }).IsUnique();
         });
         builder.Entity<DestinationMailbox>(entity =>
         {
