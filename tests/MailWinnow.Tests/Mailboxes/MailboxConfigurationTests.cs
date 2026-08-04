@@ -20,7 +20,7 @@ public sealed class MailboxConfigurationTests
         await using var db = new MailWinnowDbContext(options);
         await db.Database.EnsureCreatedAsync();
         var service = new MailboxConfigurationService(db, new OwnershipAuthorizer(), new TestProtector(),
-            Options.Create(new LocalImapOptions { Host = "local-imap", Port = 993, UseSsl = true }));
+            Options.Create(new LocalImapOptions { Host = "local-imap", Port = 993, UseSsl = true }), new ImapConnectionService());
         var owner = Principal("owner");
 
         var saved = await service.SaveSourceAsync(owner, null, new(
@@ -63,7 +63,7 @@ public sealed class MailboxConfigurationTests
         var options = new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(connection).Options;
         await using var db = new MailWinnowDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        var service = new MailboxConfigurationService(db, new OwnershipAuthorizer(), new TestProtector(), Options.Create(new LocalImapOptions()));
+        var service = new MailboxConfigurationService(db, new OwnershipAuthorizer(), new TestProtector(), Options.Create(new LocalImapOptions()), new ImapConnectionService());
         var owner = Principal("owner");
         await service.SaveSourceAsync(owner, null, new("Personal", "imap.example.test", 993, true, "owner@example.test", "secret", true, ["INBOX"]));
         var source = Assert.Single(await service.ListSourcesAsync(owner));

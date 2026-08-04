@@ -1,8 +1,5 @@
 using System.Security.Claims;
 using System.Text.Json;
-using MailKit;
-using MailKit.Net.Imap;
-using MailKit.Security;
 using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -34,7 +31,8 @@ public sealed class MailboxConfigurationService(
     MailWinnowDbContext db,
     IOwnershipAuthorizer ownership,
     ICredentialProtectionService credentials,
-    IOptions<LocalImapOptions> localImapOptions) : IMailboxConfigurationService
+    IOptions<LocalImapOptions> localImapOptions,
+    IImapConnectionService imap) : IMailboxConfigurationService
 {
     public async Task<IReadOnlyList<SourceMailboxSummary>> ListSourcesAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default)
     {
@@ -103,11 +101,17 @@ public sealed class MailboxConfigurationService(
         ownership.RequireOwner(actor, source.OwnerUserId);
         try
         {
-            using var client = new ImapClient();
-            await client.ConnectAsync(source.Host, source.Port, source.UseSsl ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTlsWhenAvailable, cancellationToken);
-            await client.AuthenticateAsync(source.Username, credentials.Unprotect(source.ProtectedCredential, CredentialKind.SourceImapPassword), cancellationToken);
-            var folders = discoverFolders ? (await client.GetFoldersAsync(client.PersonalNamespaces[0], StatusItems.None, false, cancellationToken)).Select(folder => folder.FullName).Order().ToArray() : null;
-            await client.DisconnectAsync(true, cancellationToken);
+            var connection = new ImapConnectionSettings(source.Host, source.Port, source.UseSsl, source.Username,
+                credentials.Unprotect(source.ProtectedCredential, CredentialKind.SourceImapPassword));
+            var folderTest = discoverFolders ? await imap.ListFoldersAsync(connection, cancellationToken) : null;
+            var connectionTest = discoverFolders ? null : await imap.TestConnectionAsync(connection, cancellationToken);
+            if (!(folderTest?.Succeeded ?? connectionTest!.Succeeded))
+            {
+                source.PollingStatus = "Failed"; source.SanitizedError = folderTest?.Error ?? connectionTest?.Error;
+                await db.SaveChangesAsync(cancellationToken);
+                return new(false, source.SanitizedError ?? "Unable to connect or authenticate with this mailbox.");
+            }
+            var folders = folderTest?.Value;
             source.LastSuccessfulConnectionUtc = DateTimeOffset.UtcNow; source.PollingStatus = "Connected"; source.SanitizedError = null;
             await db.SaveChangesAsync(cancellationToken);
             return new(true, discoverFolders ? "Connection succeeded; folders discovered." : "Connection succeeded.", folders);

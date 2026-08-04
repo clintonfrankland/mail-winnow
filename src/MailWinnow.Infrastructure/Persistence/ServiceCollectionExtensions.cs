@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IHouseholdAccountService, HouseholdAccountService>();
         services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
         services.AddScoped<IMailboxConfigurationService, MailboxConfigurationService>();
+        services.AddScoped<IImapConnectionService, ImapConnectionService>();
         return services;
     }
 }
