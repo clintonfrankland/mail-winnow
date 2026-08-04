@@ -1,0 +1,63 @@
+using System.Security.Claims;
+using MailWinnow.Infrastructure.Mailboxes;
+using MailWinnow.Infrastructure.Persistence;
+using MailWinnow.Infrastructure.Security;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+namespace MailWinnow.Tests.Mailboxes;
+
+public sealed class MailboxConfigurationTests
+{
+    [Fact]
+    public async Task SourceAndDestinationAreOwnerScopedAndCredentialsAreNotReturned()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(connection).Options;
+        await using var db = new MailWinnowDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var service = new MailboxConfigurationService(db, new OwnershipAuthorizer(), new TestProtector(),
+            Options.Create(new LocalImapOptions { Host = "local-imap", Port = 993, UseSsl = true }));
+        var owner = Principal("owner");
+
+        var saved = await service.SaveSourceAsync(owner, null, new(
+            "Personal", "imap.example.test", 993, true, "owner@example.test", "secret-password", true, ["INBOX"]));
+        Assert.True(saved.Succeeded, saved.Message);
+        var source = Assert.Single(await service.ListSourcesAsync(owner));
+        Assert.Equal("Personal", source.DisplayName);
+        Assert.Equal(["INBOX"], source.SelectedFolders);
+        Assert.DoesNotContain("secret-password", source.ToString(), StringComparison.Ordinal);
+        Assert.Contains("sealed:secret-password", (await db.SourceMailboxes.SingleAsync()).ProtectedCredential, StringComparison.Ordinal);
+
+        var updated = await service.SaveSourceAsync(owner, source.Id, new(
+            "Renamed", "imap.example.test", 993, true, "owner@example.test", null, false, ["Archive"]));
+        Assert.True(updated.Succeeded, updated.Message);
+        source = Assert.Single(await service.ListSourcesAsync(owner));
+        Assert.Equal("Renamed", source.DisplayName);
+        Assert.False(source.Enabled);
+        Assert.Equal(["Archive"], source.SelectedFolders);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SetSourceEnabledAsync(Principal("other"), source.Id, false));
+
+        var destination = await service.SaveDestinationAsync(owner, new("owner-local", "destination-secret", "Approved", true));
+        Assert.True(destination.Succeeded, destination.Message);
+        Assert.Equal(new DestinationMailboxSummary("owner-local", "Approved", true), await service.GetDestinationAsync(owner));
+        Assert.Contains("sealed:destination-secret", (await db.DestinationMailboxes.SingleAsync()).ProtectedCredential, StringComparison.Ordinal);
+        Assert.Null(await service.GetDestinationAsync(Principal("other")));
+    }
+
+    [Fact]
+    public void LocalImapInvalidCertificateDefaultsToFalse()
+    {
+        Assert.False(new LocalImapOptions().AllowInvalidCertificate);
+    }
+
+    private static ClaimsPrincipal Principal(string id) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, id)], "Test"));
+    private sealed class TestProtector : ICredentialProtectionService
+    {
+        public string Protect(string credential, CredentialKind kind) => "sealed:" + credential;
+        public string Unprotect(string protectedCredential, CredentialKind kind) => protectedCredential[7..];
+    }
+}

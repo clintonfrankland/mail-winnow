@@ -1,4 +1,5 @@
 using MailWinnow.Infrastructure.Security;
+using MailWinnow.Infrastructure.Mailboxes;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,4 +11,33 @@ namespace MailWinnow.Infrastructure.Persistence;
 public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> options)
     : IdentityDbContext<ApplicationUser>(options)
 {
+    public DbSet<SourceMailbox> SourceMailboxes => Set<SourceMailbox>();
+    public DbSet<DestinationMailbox> DestinationMailboxes => Set<DestinationMailbox>();
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+        builder.Entity<SourceMailbox>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
+            entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Host).HasMaxLength(255).IsRequired();
+            entity.Property(x => x.Username).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.ProtectedCredential).IsRequired();
+            entity.Property(x => x.SelectedFoldersJson).IsRequired();
+            entity.Property(x => x.PollingStatus).HasMaxLength(64);
+            entity.Property(x => x.SanitizedError).HasMaxLength(512);
+            entity.HasIndex(x => new { x.OwnerUserId, x.DisplayName });
+        });
+        builder.Entity<DestinationMailbox>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
+            entity.Property(x => x.Username).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.Folder).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.ProtectedCredential).IsRequired();
+            entity.HasIndex(x => x.OwnerUserId).IsUnique();
+        });
+    }
 }

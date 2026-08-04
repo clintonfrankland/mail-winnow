@@ -1,4 +1,5 @@
 using MailWinnow.Infrastructure.Security;
+using MailWinnow.Infrastructure.Mailboxes;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -22,6 +23,7 @@ public static class ServiceCollectionExtensions
                     "The ConnectionStrings:MailWinnow configuration value is required.")));
 
         services.AddMailWinnowCredentialProtection(configuration);
+        services.Configure<LocalImapOptions>(configuration.GetSection(LocalImapOptions.SectionName));
         services.AddIdentityCore<ApplicationUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
@@ -36,6 +38,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFirstRunSetupService, FirstRunSetupService>();
         services.AddScoped<IHouseholdAccountService, HouseholdAccountService>();
         services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
+        services.AddScoped<IMailboxConfigurationService, MailboxConfigurationService>();
         return services;
     }
 }
