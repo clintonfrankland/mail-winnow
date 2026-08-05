@@ -9,7 +9,7 @@ namespace MailWinnow.Infrastructure.Rules;
 
 public sealed record MessageReviewFilter(Guid? SourceMailboxId, RuleOutcome? Outcome, string? Search);
 public sealed record MessageReviewItem(Guid Id, string Sender, string Subject, string Account, DateTimeOffset ReceivedUtc,
-    string SourceStatus, RuleOutcome Outcome, string DeliveryStatus, string RuleContext, string RetentionContext);
+    string SourceStatus, RuleOutcome Outcome, string DeliveryStatus, string RuleContext, string RetentionContext, Guid? DeliveryId = null);
 public sealed record MessageReviewGroup(string Value, int Count, DateTimeOffset MostRecentUtc, IReadOnlyList<string> Samples, IReadOnlyList<string> RuleContexts);
 public sealed record ReviewRule(Guid Id, RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays);
 
@@ -35,8 +35,9 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
             .OrderByDescending(x => x.ReceivedUtc).ToList();
         var decisions = await db.MessageDecisions.Where(x => x.OwnerUserId == owner && headers.Select(h => h.Id).Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
         var rules = await db.MailRules.Where(x => x.OwnerUserId == owner).ToListAsync(cancellationToken);
+        var deliveries = await db.MessageDeliveries.Where(x => x.OwnerUserId == owner && headers.Select(h => h.Id).Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var items = headers.Select(header => ToItem(header, sources[header.SourceMailboxId], rules, decisions.GetValueOrDefault(header.Id), now));
+        var items = headers.Select(header => ToItem(header, sources[header.SourceMailboxId], rules, decisions.GetValueOrDefault(header.Id), deliveries.GetValueOrDefault(header.Id), now));
         if (filter.Outcome is { } outcome) items = items.Where(x => x.Outcome == outcome);
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -64,15 +65,16 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
             group.Key, group.Count(), group.Max(x => x.ReceivedUtc), group.OrderByDescending(x => x.ReceivedUtc).Take(3).Select(x => x.Subject).ToList(),
             group.Select(x => x.RuleContext).Distinct().Take(3).ToList())).ToList();
 
-    private static MessageReviewItem ToItem(SourceMessageHeader header, SourceMailbox source, IReadOnlyList<MailRule> rules, MessageDecision? decision, DateTimeOffset now)
+    private static MessageReviewItem ToItem(SourceMessageHeader header, SourceMailbox source, IReadOnlyList<MailRule> rules, MessageDecision? decision, MessageDelivery? delivery, DateTimeOffset now)
     {
         var evaluation = RuleEvaluator.Evaluate(rules.Select(x => new RuleCandidate(x.Id, x.Action, x.Scope, x.MatchType, x.MatchValue, x.SourceMailboxId, x.EffectiveUtc, x.ExpiresUtc)), header.From, header.Subject, header.SourceMailboxId, now, decision?.Action);
         var applied = evaluation.AppliedRule is null ? null : rules.Single(x => x.Id == evaluation.AppliedRule.Id);
         var ruleContext = decision is not null ? "One-message approval" : applied is null ? "No matching reusable rule" : $"{applied.Action} via {applied.MatchType}";
         if (applied?.ExpiresUtc is { } expiry) ruleContext += $"; rule expires {expiry:u}";
         var retention = applied is null ? "Delivered-copy deletion: no rule retention policy" : $"Delivered-copy deletion: {applied.DeliveredMessageRetentionDays} days after local delivery";
-        var delivery = evaluation.Outcome switch { RuleOutcome.Allow => "Eligible for local delivery", RuleOutcome.Block => "Withheld from local delivery", _ => "Awaiting review; not locally delivered" };
+        var deliveryStatus = delivery is null ? evaluation.Outcome switch { RuleOutcome.Allow => "Eligible for local delivery", RuleOutcome.Block => "Withheld from local delivery", _ => "Awaiting review; not locally delivered" } :
+            delivery.State == MessageDeliveryState.Failed ? $"Failed during {delivery.LastFailureStage}; retry available" : delivery.State.ToString();
         return new(header.Id, header.From ?? "(unknown sender)", header.Subject ?? "(no subject)", source.DisplayName, header.ReceivedUtc,
-            $"Source: {source.PollingStatus ?? (source.Enabled ? "enabled" : "disabled")}", evaluation.Outcome, delivery, ruleContext, retention);
+            $"Source: {source.PollingStatus ?? (source.Enabled ? "enabled" : "disabled")}", evaluation.Outcome, deliveryStatus, ruleContext, retention, delivery?.Id);
     }
 }

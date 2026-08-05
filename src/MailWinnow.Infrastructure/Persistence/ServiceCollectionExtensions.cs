@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuleEvaluationService, RuleEvaluationService>();
         services.AddScoped<IRuleManagementService, RuleManagementService>();
         services.AddScoped<IMessageReviewService, MessageReviewService>();
+        services.AddScoped<IMessageDeliveryService, MessageDeliveryService>();
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
         return services;
     }

@@ -52,7 +52,7 @@ public interface IRuleManagementService
 }
 
 /// <summary>Writes rules only after validating their scope, temporary dates, and ownership.</summary>
-public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluationService evaluation) : IRuleManagementService
+public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluationService evaluation, IMessageDeliveryService? deliveries = null) : IRuleManagementService
 {
     public async Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default)
     {
@@ -99,6 +99,8 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         if (existing is null) db.MessageDecisions.Add(decision); else db.Entry(existing).CurrentValues.SetValues(decision);
         await db.SaveChangesAsync(cancellationToken);
         await evaluation.EvaluateAsync(decision.OwnerUserId, decision.SourceMessageHeaderId, DateTimeOffset.UtcNow, cancellationToken);
+        if (decision.Action == RuleAction.ApproveOneMessage && deliveries is not null)
+            await deliveries.QueueApprovedAsync(decision.OwnerUserId, decision.SourceMessageHeaderId, cancellationToken);
     }
 
     public async Task DeleteMessageDecisionAsync(string ownerUserId, Guid headerId, CancellationToken cancellationToken = default)

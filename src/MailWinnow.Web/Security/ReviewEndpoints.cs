@@ -1,5 +1,6 @@
 using MailWinnow.Core.Rules;
 using MailWinnow.Infrastructure.Rules;
+using MailWinnow.Infrastructure.Mailboxes;
 using MailWinnow.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,6 +15,7 @@ public static class ReviewEndpoints
         group.MapPost("/rule/delete", DeleteRuleAsync);
         group.MapPost("/message/approve", ApproveAsync);
         group.MapPost("/message/undo", UndoAsync);
+        group.MapPost("/delivery/retry", RetryDeliveryAsync);
         return endpoints;
     }
 
@@ -49,8 +51,18 @@ public static class ReviewEndpoints
         try { await rules.DeleteMessageDecisionAsync(ownership.RequireCurrentUserId(context.User), request.Id, ct); return Redirect("One-message decision undone."); }
         catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
     }
+    private static async Task<IResult> RetryDeliveryAsync(HttpContext context, [FromForm] DeliveryRequest request, IMessageDeliveryService deliveries, CancellationToken ct)
+    {
+        try
+        {
+            var result = await deliveries.RetryAsync(context.User, request.Id, ct);
+            return Redirect(result.Message, !result.Succeeded);
+        }
+        catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
+    }
     private static IResult Redirect(string message, bool error = false) => Results.LocalRedirect("/review?" + (error ? "error=" : "saved=") + Uri.EscapeDataString(message));
     public sealed record RuleRequest(RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays = MailRule.DefaultDeliveredMessageRetentionDays, Guid? ReplaceRuleId = null);
     public sealed record RuleIdRequest(Guid Id);
     public sealed record HeaderRequest(Guid Id);
+    public sealed record DeliveryRequest(Guid Id);
 }

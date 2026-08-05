@@ -60,3 +60,25 @@ public sealed class DestinationMailbox
     public required string Folder { get; set; }
     public bool Enabled { get; set; } = true;
 }
+
+/// <summary>Durable state for the one permitted copy of an approved source message. No MIME content is stored here.</summary>
+public sealed class MessageDelivery
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid SourceMessageHeaderId { get; set; }
+    public required string OwnerUserId { get; set; }
+    public MessageDeliveryState State { get; set; } = MessageDeliveryState.Pending;
+    public uint? DestinationUid { get; set; }
+    public uint? DestinationUidValidity { get; set; }
+    public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? FetchStartedUtc { get; set; }
+    public DateTimeOffset? DeliveryStartedUtc { get; set; }
+    public DateTimeOffset? DeliveredUtc { get; set; }
+    public DateTimeOffset? ExpiresUtc { get; set; }
+    public DateTimeOffset? RetryRequestedUtc { get; set; }
+    public string? RetryRequestedByUserId { get; set; }
+    public string? LastFailureStage { get; set; }
+    public string? SanitizedError { get; set; }
+}
+
+public enum MessageDeliveryState { Pending, Fetching, Delivering, Delivered, RetryPending, Failed, Expired, Deleted }

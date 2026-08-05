@@ -19,6 +19,7 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
     public DbSet<SourceMessageHeader> SourceMessageHeaders => Set<SourceMessageHeader>();
     public DbSet<MailRule> MailRules => Set<MailRule>();
     public DbSet<MessageDecision> MessageDecisions => Set<MessageDecision>();
+    public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -77,6 +78,17 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.Property(x => x.Folder).HasMaxLength(500).IsRequired();
             entity.Property(x => x.ProtectedCredential).IsRequired();
             entity.HasIndex(x => x.OwnerUserId).IsUnique();
+        });
+        builder.Entity<MessageDelivery>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
+            entity.Property(x => x.State).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.RetryRequestedByUserId).HasMaxLength(450);
+            entity.Property(x => x.LastFailureStage).HasMaxLength(32);
+            entity.Property(x => x.SanitizedError).HasMaxLength(512);
+            entity.HasIndex(x => x.SourceMessageHeaderId).IsUnique();
+            entity.HasIndex(x => new { x.OwnerUserId, x.State });
         });
     }
 }

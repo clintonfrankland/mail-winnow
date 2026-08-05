@@ -3,7 +3,7 @@ namespace MailWinnow.Worker;
 using MailWinnow.Infrastructure.Mailboxes;
 using Microsoft.Extensions.Options;
 
-public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSyncQueue queue, IOptions<MailSyncOptions> options) : BackgroundService
+public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSyncQueue queue, IMessageDeliveryService deliveries, IOptions<MailSyncOptions> options) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,6 +24,19 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
                     {
                         // Account failures are intentionally isolated; the synchronizer records sanitized status for known accounts.
                         logger.LogWarning(exception, "Header synchronization failed for source mailbox {MailboxId}", id);
+                    }
+                });
+                var deliveryIds = await deliveries.GetDueDeliveryIdsAsync(stoppingToken);
+                await Parallel.ForEachAsync(deliveryIds, new ParallelOptions { MaxDegreeOfParallelism = maximumConcurrency, CancellationToken = stoppingToken }, async (id, token) =>
+                {
+                    try
+                    {
+                        await using var scope = scopes.CreateAsyncScope();
+                        await scope.ServiceProvider.GetRequiredService<IMessageDeliveryService>().DeliverAsync(id, token);
+                    }
+                    catch (Exception exception) when (!token.IsCancellationRequested)
+                    {
+                        logger.LogWarning(exception, "Approved message delivery failed for delivery {DeliveryId}", id);
                     }
                 });
             }
