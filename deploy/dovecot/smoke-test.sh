@@ -8,15 +8,24 @@ root_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 temp_dir=$(mktemp -d)
 project="dovecot-smoke-$$"
 cleanup() {
-  docker compose --project-directory "$root_dir" -p "$project" down --volumes --remove-orphans >/dev/null 2>&1 || true
   # TLS creation runs as container root, so clear the disposable bind mount from a
-  # container before removing its now-empty host directory.
+  # container before removing its now-empty host directory. This recreates the
+  # mailbox volume, so Compose teardown must happen afterwards.
   DOVECOT_CONFIG_DIR="$temp_dir" docker compose --project-directory "$root_dir" -p "$project" run --rm --no-deps --entrypoint sh dovecot -c 'rm -rf /etc/dovecot/local/* /etc/dovecot/local/.[!.]*' >/dev/null 2>&1 || true
+  docker compose --project-directory "$root_dir" -p "$project" down --volumes --remove-orphans >/dev/null 2>&1 || true
   rmdir "$temp_dir" 2>/dev/null || true
+
+  leftovers=$(docker ps -aq --filter "label=com.docker.compose.project=$project")
+  leftovers="$leftovers$(docker volume ls -q --filter "label=com.docker.compose.project=$project")"
+  leftovers="$leftovers$(docker network ls -q --filter "label=com.docker.compose.project=$project")"
+  [ -z "$leftovers" ] || {
+    echo "Smoke test cleanup left Compose resources for $project" >&2
+    return 1
+  }
 }
 trap cleanup EXIT INT TERM
 
-hash=$(docker compose --project-directory "$root_dir" run --rm --no-deps --entrypoint doveadm dovecot pw -s SHA512-CRYPT -p smoke-test-password)
+hash=$(docker compose --project-directory "$root_dir" -p "$project" run --rm --no-deps --entrypoint doveadm dovecot pw -s SHA512-CRYPT -p smoke-test-password)
 printf 'smoke@example.test:%s\n' "$hash" > "$temp_dir/users"
 DOVECOT_CONFIG_DIR="$temp_dir" DOVECOT_IMAPS_PORT=19993 \
   docker compose --project-directory "$root_dir" -p "$project" up --build -d
