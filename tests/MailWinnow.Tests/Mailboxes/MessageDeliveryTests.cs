@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MimeKit;
+using System.Reflection;
 
 namespace MailWinnow.Tests.Mailboxes;
 
@@ -47,6 +48,37 @@ public sealed class MessageDeliveryTests
         await otherService.DeliverAsync(deliveryId);
         f.Imap.ReleaseFetches();
         await first;
+
+        Assert.Equal(1, f.Imap.AppendCalls);
+        Assert.Equal(MessageDeliveryState.Delivered, (await f.Db.MessageDeliveries.SingleAsync()).State);
+    }
+
+    [Fact]
+    public async Task Old_stale_snapshot_cannot_reset_a_refreshed_claim_or_append_a_second_copy()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Imap.HoldFetches = true;
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+        delivery.State = MessageDeliveryState.Fetching;
+        delivery.FetchStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-6);
+        await f.Db.SaveChangesAsync();
+
+        await using var oldSnapshotDb = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(f.Connection).Options);
+        var oldSnapshot = await oldSnapshotDb.MessageDeliveries.AsNoTracking().SingleAsync();
+        await using var activeDb = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(f.Connection).Options);
+        var activeService = f.CreateService(activeDb);
+
+        var activeDelivery = activeService.DeliverAsync(delivery.Id);
+        await f.Imap.FetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var delayedService = f.CreateService(oldSnapshotDb);
+        var claim = typeof(MessageDeliveryService).GetMethod("TryClaimAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var delayedClaim = (Task<bool>)claim.Invoke(delayedService, [oldSnapshot, CancellationToken.None])!;
+        Assert.False(await delayedClaim);
+
+        f.Imap.ReleaseFetches();
+        await activeDelivery;
 
         Assert.Equal(1, f.Imap.AppendCalls);
         Assert.Equal(MessageDeliveryState.Delivered, (await f.Db.MessageDeliveries.SingleAsync()).State);

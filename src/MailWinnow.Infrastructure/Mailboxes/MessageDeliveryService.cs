@@ -155,10 +155,14 @@ public sealed class MessageDeliveryService(
         if ((current.State == MessageDeliveryState.Fetching && current.FetchStartedUtc < staleBefore) ||
             (current.State == MessageDeliveryState.Delivering && current.DeliveryStartedUtc < staleBefore))
         {
-            // The timestamp is evaluated from the snapshot only to decide whether a
-            // crashed claim is eligible. The state transition itself is conditional.
-            await db.MessageDeliveries.Where(x => x.Id == current.Id && x.State == current.State)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.State, MessageDeliveryState.RetryPending), token);
+            // Bind recovery to the precise in-flight claim observed by this worker.
+            // A worker with an old snapshot must not reset a claim another worker has
+            // already recovered and refreshed while it was waiting to execute.
+            var staleClaim = db.MessageDeliveries.Where(x => x.Id == current.Id && x.State == current.State);
+            staleClaim = current.State == MessageDeliveryState.Fetching
+                ? staleClaim.Where(x => x.FetchStartedUtc == current.FetchStartedUtc)
+                : staleClaim.Where(x => x.DeliveryStartedUtc == current.DeliveryStartedUtc);
+            await staleClaim.ExecuteUpdateAsync(setters => setters.SetProperty(x => x.State, MessageDeliveryState.RetryPending), token);
         }
         var updated = await db.MessageDeliveries
             .Where(x => x.Id == current.Id && (x.State == MessageDeliveryState.Pending || x.State == MessageDeliveryState.RetryPending))
