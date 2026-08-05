@@ -3,7 +3,7 @@ namespace MailWinnow.Worker;
 using MailWinnow.Infrastructure.Mailboxes;
 using Microsoft.Extensions.Options;
 
-public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSyncQueue queue, IMessageDeliveryService deliveries, IOptions<MailSyncOptions> options) : BackgroundService
+public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSyncQueue queue, IOptions<MailSyncOptions> options) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -26,7 +26,8 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
                         logger.LogWarning(exception, "Header synchronization failed for source mailbox {MailboxId}", id);
                     }
                 });
-                var deliveryIds = await deliveries.GetDueDeliveryIdsAsync(stoppingToken);
+                await using var deliveryScope = scopes.CreateAsyncScope();
+                var deliveryIds = await deliveryScope.ServiceProvider.GetRequiredService<IMessageDeliveryService>().GetDueDeliveryIdsAsync(stoppingToken);
                 await Parallel.ForEachAsync(deliveryIds, new ParallelOptions { MaxDegreeOfParallelism = maximumConcurrency, CancellationToken = stoppingToken }, async (id, token) =>
                 {
                     try

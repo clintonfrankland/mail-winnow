@@ -12,7 +12,7 @@ public interface IImapConnectionService
     Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity = null, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings connection, string folderName, uint uid, uint? expectedUidValidity = null, CancellationToken cancellationToken = default);
-    Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default);
+    Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default, DateTimeOffset? receivedUtc = null);
     Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> expiredUids, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default);
@@ -39,7 +39,7 @@ public interface IImapClientSession : IAsyncDisposable
     Task<IReadOnlyList<string>> ListFoldersAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<ImapMessageHeader>> FetchHeadersAsync(string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity, CancellationToken cancellationToken);
     Task<MimeMessage> FetchMessageAsync(string folderName, uint uid, uint? expectedUidValidity, CancellationToken cancellationToken);
-    Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken);
+    Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken, DateTimeOffset? receivedUtc = null);
     Task DeleteAndExpungeAsync(string folderName, IReadOnlyList<uint> uids, CancellationToken cancellationToken);
     Task DisconnectAsync(CancellationToken cancellationToken);
     Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken cancellationToken);
@@ -76,8 +76,8 @@ public sealed class ImapConnectionService(IImapClientSessionFactory? sessions = 
     public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings connection, string folderName, uint uid, uint? expectedUidValidity = null, CancellationToken cancellationToken = default) =>
         WithSessionAsync(connection, (session, token) => session.FetchMessageAsync(folderName, uid, expectedUidValidity, token), cancellationToken);
 
-    public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default) =>
-        WithSessionAsync(connection, (session, token) => session.AppendMessageAsync(folderName, message, token), cancellationToken);
+    public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default, DateTimeOffset? receivedUtc = null) =>
+        WithSessionAsync(connection, (session, token) => session.AppendMessageAsync(folderName, message, token, receivedUtc), cancellationToken);
 
     public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> expiredUids, CancellationToken cancellationToken = default)
     {
@@ -156,7 +156,14 @@ internal sealed class MailKitImapClientSession : IImapClientSession
         return summaries.Select(x => new ImapMessageHeader(x.UniqueId.Id, Header(x, "Message-ID"), ParseDate(Header(x, "Date")), Header(x, "From"), Header(x, "Sender"), Header(x, "Reply-To"), Header(x, "To"), Header(x, "Cc"), Header(x, "Subject"), Header(x, "Authentication-Results"))).ToArray();
     }
     public async Task<MimeMessage> FetchMessageAsync(string folderName, uint uid, uint? expectedUidValidity, CancellationToken cancellationToken) => await (await OpenFolderAsync(folderName, FolderAccess.ReadOnly, expectedUidValidity, cancellationToken)).GetMessageAsync(new UniqueId(uid), cancellationToken);
-    public async Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken) => (await (await OpenFolderAsync(folderName, FolderAccess.ReadWrite, null, cancellationToken)).AppendAsync(message, MessageFlags.None, cancellationToken))?.Id;
+    public async Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken, DateTimeOffset? receivedUtc = null)
+    {
+        var folder = await OpenFolderAsync(folderName, FolderAccess.ReadWrite, null, cancellationToken);
+        var uid = receivedUtc is { } date
+            ? await folder.AppendAsync(message, MessageFlags.None, date, cancellationToken)
+            : await folder.AppendAsync(message, MessageFlags.None, cancellationToken);
+        return uid?.Id;
+    }
     public async Task DeleteAndExpungeAsync(string folderName, IReadOnlyList<uint> uids, CancellationToken cancellationToken)
     {
         var folder = await OpenFolderAsync(folderName, FolderAccess.ReadWrite, null, cancellationToken);

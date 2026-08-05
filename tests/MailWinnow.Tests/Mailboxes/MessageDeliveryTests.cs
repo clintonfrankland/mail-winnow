@@ -47,6 +47,82 @@ public sealed class MessageDeliveryTests
         Assert.Equal(0, f.Imap.AppendCalls);
     }
 
+    [Fact]
+    public async Task Recovered_append_receipt_completes_without_a_second_append()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+        delivery.State = MessageDeliveryState.Delivering;
+        delivery.DeliveryStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-6);
+        delivery.DestinationUid = 77;
+        delivery.DestinationUidValidity = 42;
+        await f.Db.SaveChangesAsync();
+
+        await f.Service.DeliverAsync(delivery.Id);
+
+        Assert.Equal(MessageDeliveryState.Delivered, (await f.Db.MessageDeliveries.SingleAsync()).State);
+        Assert.Equal(0, f.Imap.AppendCalls);
+    }
+
+    [Fact]
+    public async Task Crash_after_append_before_receipt_is_reconciled_without_a_duplicate()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+        delivery.State = MessageDeliveryState.Delivering;
+        delivery.DeliveryStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-6);
+        delivery.DestinationUidValidity = 42;
+        delivery.DestinationUidFloor = 76;
+        await f.Db.SaveChangesAsync();
+
+        await f.Service.DeliverAsync(delivery.Id);
+
+        delivery = await f.Db.MessageDeliveries.SingleAsync();
+        Assert.Equal(MessageDeliveryState.Delivered, delivery.State);
+        Assert.Equal(77u, delivery.DestinationUid);
+        Assert.Equal(0, f.Imap.AppendCalls);
+    }
+
+    [Fact]
+    public async Task Stale_delivery_before_append_is_recovered_and_transferred_once()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+        delivery.State = MessageDeliveryState.Delivering;
+        delivery.DeliveryStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-6);
+        await f.Db.SaveChangesAsync();
+
+        await f.Service.DeliverAsync(delivery.Id);
+
+        Assert.Equal(MessageDeliveryState.Delivered, (await f.Db.MessageDeliveries.SingleAsync()).State);
+        Assert.Equal(1, f.Imap.AppendCalls);
+    }
+
+    [Fact]
+    public async Task Reusable_allow_rule_queues_delivery_with_the_applied_rules_retention()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Header.EvaluationOutcome = RuleOutcome.Pending;
+        var rule = new MailWinnow.Infrastructure.Rules.MailRule
+        {
+            OwnerUserId = "owner", Action = RuleAction.PermanentlyAllow, Scope = RuleScope.User,
+            MatchType = RuleMatchType.ExactSender, MatchValue = "allowed@example.test", DeliveredMessageRetentionDays = 7
+        };
+        f.Header.From = "allowed@example.test";
+        f.Db.MailRules.Add(rule);
+        await f.Db.SaveChangesAsync();
+
+        await new MailWinnow.Infrastructure.Rules.RuleEvaluationService(f.Db, f.Service).EvaluateAsync("owner", f.Header.Id, DateTimeOffset.UtcNow);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+
+        Assert.Equal(rule.Id, delivery.ApprovalRuleId);
+        await f.Service.DeliverAsync(delivery.Id);
+        Assert.Equal(7, ((await f.Db.MessageDeliveries.SingleAsync()).ExpiresUtc!.Value - (await f.Db.MessageDeliveries.SingleAsync()).DeliveredUtc!.Value).TotalDays);
+    }
+
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db, SourceMessageHeader header, FakeImap imap, MessageDeliveryService service) : IAsyncDisposable
     {
         public MailWinnowDbContext Db { get; } = db; public SourceMessageHeader Header { get; } = header; public FakeImap Imap { get; } = imap; public MessageDeliveryService Service { get; } = service;
@@ -70,7 +146,7 @@ public sealed class MessageDeliveryTests
     {
         public bool FetchFailure { get; set; } public int AppendCalls { get; private set; }
         public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) => Task.FromResult(FetchFailure ? ImapOperationResult<MimeMessage>.Failure(ImapFailureKind.Transient, "safe failure") : ImapOperationResult<MimeMessage>.Success(new MimeMessage { Subject = "original" }));
-        public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default) { AppendCalls++; return Task.FromResult(ImapOperationResult<uint?>.Success(77)); }
+        public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default, DateTimeOffset? receivedUtc = null) { AppendCalls++; return Task.FromResult(ImapOperationResult<uint?>.Success(77)); }
         public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings c, string f, CancellationToken t = default) => Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(new(42, [77])));
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint? v = null, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
     }

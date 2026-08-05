@@ -12,7 +12,7 @@ public interface IRuleEvaluationService
 }
 
 /// <summary>Owner-bound evaluation and safe pending-header reevaluation on rule changes.</summary>
-public sealed class RuleEvaluationService(MailWinnowDbContext db) : IRuleEvaluationService
+public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDeliveryService? deliveries = null) : IRuleEvaluationService
 {
     public async Task<RuleEvaluation> EvaluateAsync(string ownerUserId, Guid headerId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
     {
@@ -23,6 +23,8 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db) : IRuleEvaluat
         header.EvaluationOutcome = result.Outcome;
         header.EvaluatedUtc = nowUtc;
         await db.SaveChangesAsync(cancellationToken);
+        if (result.Outcome == RuleOutcome.Allow && deliveries is not null)
+            await deliveries.QueueApprovedAsync(ownerUserId, headerId, result.AppliedRule?.Id, cancellationToken);
         return result;
     }
 
@@ -52,7 +54,7 @@ public interface IRuleManagementService
 }
 
 /// <summary>Writes rules only after validating their scope, temporary dates, and ownership.</summary>
-public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluationService evaluation, IMessageDeliveryService? deliveries = null) : IRuleManagementService
+public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluationService evaluation) : IRuleManagementService
 {
     public async Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default)
     {
@@ -99,8 +101,6 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         if (existing is null) db.MessageDecisions.Add(decision); else db.Entry(existing).CurrentValues.SetValues(decision);
         await db.SaveChangesAsync(cancellationToken);
         await evaluation.EvaluateAsync(decision.OwnerUserId, decision.SourceMessageHeaderId, DateTimeOffset.UtcNow, cancellationToken);
-        if (decision.Action == RuleAction.ApproveOneMessage && deliveries is not null)
-            await deliveries.QueueApprovedAsync(decision.OwnerUserId, decision.SourceMessageHeaderId, cancellationToken);
     }
 
     public async Task DeleteMessageDecisionAsync(string ownerUserId, Guid headerId, CancellationToken cancellationToken = default)

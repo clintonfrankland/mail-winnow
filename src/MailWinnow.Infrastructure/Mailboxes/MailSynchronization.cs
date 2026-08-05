@@ -2,6 +2,7 @@ using System.Data;
 using System.Security.Claims;
 using System.Text.Json;
 using MailWinnow.Infrastructure.Persistence;
+using MailWinnow.Infrastructure.Rules;
 using MailWinnow.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,7 +66,8 @@ public sealed class SourceMailboxSynchronizer(
     ICredentialProtectionService credentials,
     IImapConnectionService imap,
     IOptions<MailSyncOptions> options,
-    ISourceMailboxSyncLockProvider locks) : ISourceMailboxSynchronizer
+    ISourceMailboxSyncLockProvider locks,
+    IRuleEvaluationService? evaluation = null) : ISourceMailboxSynchronizer
 {
     public async Task SynchronizeAsync(Guid sourceMailboxId, CancellationToken cancellationToken = default)
     {
@@ -119,9 +121,16 @@ public sealed class SourceMailboxSynchronizer(
         if (pending.Length == 0) return 0;
         var headers = await imap.FetchHeadersAsync(connection, folder, pending, state.UidValidity, cancellationToken);
         if (!headers.Succeeded) throw new InvalidOperationException(headers.Error);
+        var addedHeaderIds = new List<Guid>();
         foreach (var header in headers.Value!)
-            db.SourceMessageHeaders.Add(new SourceMessageHeader { SourceMailboxId = source.Id, FolderName = folder, UidValidity = state.UidValidity, Uid = header.Uid, MessageId = header.MessageId, Date = header.Date, From = header.From, To = header.To, Subject = header.Subject, ReceivedUtc = DateTimeOffset.UtcNow });
+        {
+            var id = Guid.NewGuid();
+            db.SourceMessageHeaders.Add(new SourceMessageHeader { Id = id, SourceMailboxId = source.Id, FolderName = folder, UidValidity = state.UidValidity, Uid = header.Uid, MessageId = header.MessageId, Date = header.Date, From = header.From, To = header.To, Subject = header.Subject, ReceivedUtc = DateTimeOffset.UtcNow });
+            addedHeaderIds.Add(id);
+        }
         await db.SaveChangesAsync(cancellationToken);
+        if (evaluation is not null)
+            foreach (var headerId in addedHeaderIds) await evaluation.EvaluateAsync(source.OwnerUserId, headerId, DateTimeOffset.UtcNow, cancellationToken);
         return headers.Value!.Count;
     }
 }

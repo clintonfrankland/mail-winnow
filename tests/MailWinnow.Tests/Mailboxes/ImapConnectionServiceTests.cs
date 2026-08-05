@@ -86,7 +86,7 @@ public sealed class ImapConnectionServiceTests
         public Task<IReadOnlyList<string>> ListFoldersAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<string>>([]);
         public Task<IReadOnlyList<ImapMessageHeader>> FetchHeadersAsync(string folder, IReadOnlyList<uint> uids, uint? uidValidity, CancellationToken token) { Commands.Add($"fetch-headers:{folder}:{string.Join(',', uids)}"); if (HeaderException is not null) throw HeaderException; return Task.FromResult(Headers); }
         public Task<MimeMessage> FetchMessageAsync(string folder, uint uid, uint? uidValidity, CancellationToken token) => Task.FromResult(new MimeMessage());
-        public Task<uint?> AppendMessageAsync(string folder, MimeMessage message, CancellationToken token) { Commands.Add($"append:{folder}"); AppendedMessage = message; return Task.FromResult(AppendedUid); }
+        public Task<uint?> AppendMessageAsync(string folder, MimeMessage message, CancellationToken token, DateTimeOffset? receivedUtc = null) { Commands.Add($"append:{folder}"); AppendedMessage = message; return Task.FromResult(AppendedUid); }
         public Task DeleteAndExpungeAsync(string folder, IReadOnlyList<uint> uids, CancellationToken token) { Commands.Add($"delete-expunge:{folder}:{string.Join(',', uids)}"); DeletedUids = uids; return Task.CompletedTask; }
         public Task DisconnectAsync(CancellationToken token) { Commands.Add("disconnect"); return Task.CompletedTask; }
         public Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken token) => Task.FromResult(new ImapFolderSnapshot(1, []));

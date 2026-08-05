@@ -67,12 +67,16 @@ public sealed class MessageDelivery
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid SourceMessageHeaderId { get; set; }
     public required string OwnerUserId { get; set; }
+    /// <summary>The reusable rule that authorized this copy, when applicable.</summary>
+    public Guid? ApprovalRuleId { get; set; }
     public MessageDeliveryState State { get; set; } = MessageDeliveryState.Pending;
     public uint? DestinationUid { get; set; }
     public uint? DestinationUidValidity { get; set; }
+    public uint? DestinationUidFloor { get; set; }
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? FetchStartedUtc { get; set; }
     public DateTimeOffset? DeliveryStartedUtc { get; set; }
+    public DateTimeOffset? DestinationAppendStartedUtc { get; set; }
     public DateTimeOffset? DeliveredUtc { get; set; }
     public DateTimeOffset? ExpiresUtc { get; set; }
     public DateTimeOffset? RetryRequestedUtc { get; set; }

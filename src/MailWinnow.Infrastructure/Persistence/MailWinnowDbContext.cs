@@ -88,6 +88,7 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.Property(x => x.LastFailureStage).HasMaxLength(32);
             entity.Property(x => x.SanitizedError).HasMaxLength(512);
             entity.HasIndex(x => x.SourceMessageHeaderId).IsUnique();
+            entity.HasIndex(x => x.ApprovalRuleId);
             entity.HasIndex(x => new { x.OwnerUserId, x.State });
         });
     }
