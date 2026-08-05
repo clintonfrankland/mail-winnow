@@ -267,6 +267,29 @@ public sealed class MessageDeliveryTests
         Assert.Equal(7, ((await f.Db.MessageDeliveries.SingleAsync()).ExpiresUtc!.Value - (await f.Db.MessageDeliveries.SingleAsync()).DeliveredUtc!.Value).TotalDays);
     }
 
+    [Fact]
+    public async Task Expired_delivery_is_deleted_once_using_its_recorded_destination_identity()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+        await f.Service.DeliverAsync(delivery.Id);
+        delivery = await f.Db.MessageDeliveries.SingleAsync();
+        delivery.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await f.Db.SaveChangesAsync();
+
+        await f.Service.CleanupExpiredAsync(delivery.Id);
+        await f.Service.CleanupExpiredAsync(delivery.Id);
+
+        delivery = await f.Db.MessageDeliveries.SingleAsync();
+        Assert.Equal(MessageDeliveryState.Deleted, delivery.State);
+        Assert.NotNull(delivery.DeletedUtc);
+        Assert.Equal(1, f.Imap.DeleteCalls);
+        Assert.Equal(77u, f.Imap.DeletedUid);
+        Assert.Equal(42u, f.Imap.DeletedUidValidity);
+        Assert.Equal("INBOX", f.Imap.DeletedFolder);
+    }
+
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db, SourceMessageHeader header, FakeImap imap, MessageDeliveryService service) : IAsyncDisposable
     {
         public SqliteConnection Connection { get; } = connection; public MailWinnowDbContext Db { get; } = db; public SourceMessageHeader Header { get; } = header; public FakeImap Imap { get; } = imap; public MessageDeliveryService Service { get; } = service;
@@ -290,7 +313,7 @@ public sealed class MessageDeliveryTests
     private static ClaimsPrincipal Principal(string userId) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], "Test"));
     private sealed class FakeImap : IImapConnectionService
     {
-        public bool FetchFailure { get; set; } public bool AppendResponseLost { get; set; } public bool HoldFetches { get; set; } public int AppendCalls { get; private set; }
+        public bool FetchFailure { get; set; } public bool AppendResponseLost { get; set; } public bool HoldFetches { get; set; } public int AppendCalls { get; private set; } public int DeleteCalls { get; private set; } public uint DeletedUid { get; private set; } public uint DeletedUidValidity { get; private set; } public string? DeletedFolder { get; private set; }
         public TaskCompletionSource FetchStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource fetchRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public IReadOnlyList<uint> DestinationUids { get; set; } = [];
@@ -302,6 +325,6 @@ public sealed class MessageDeliveryTests
         public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings c, string f, CancellationToken t = default) => Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(new(42, DestinationUids)));
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
         public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint? v = null, CancellationToken t = default) => Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success(DestinationHeaders.Where(x => u.Contains(x.Uid)).ToArray()));
-        public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
+        public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint v, CancellationToken t = default) { DeleteCalls++; DeletedUid = Assert.Single(u); DeletedUidValidity = v; DeletedFolder = f; return Task.FromResult(ImapOperationResult<int>.Success(1)); } public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
     }
 }

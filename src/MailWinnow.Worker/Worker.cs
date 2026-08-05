@@ -40,6 +40,19 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
                         logger.LogWarning(exception, "Approved message delivery failed for delivery {DeliveryId}", id);
                     }
                 });
+                var cleanupIds = await deliveryScope.ServiceProvider.GetRequiredService<IMessageDeliveryService>().GetDueCleanupIdsAsync(stoppingToken);
+                await Parallel.ForEachAsync(cleanupIds, new ParallelOptions { MaxDegreeOfParallelism = maximumConcurrency, CancellationToken = stoppingToken }, async (id, token) =>
+                {
+                    try
+                    {
+                        await using var scope = scopes.CreateAsyncScope();
+                        await scope.ServiceProvider.GetRequiredService<IMessageDeliveryService>().CleanupExpiredAsync(id, token);
+                    }
+                    catch (Exception exception) when (!token.IsCancellationRequested)
+                    {
+                        logger.LogWarning(exception, "Delivered message cleanup failed for delivery {DeliveryId}", id);
+                    }
+                });
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
             {

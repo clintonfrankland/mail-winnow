@@ -73,12 +73,17 @@ public sealed class MessageDelivery
     public uint? DestinationUid { get; set; }
     public uint? DestinationUidValidity { get; set; }
     public uint? DestinationUidFloor { get; set; }
+    /// <summary>Destination identity captured when the copy was appended, so retention cleanup cannot follow later mailbox edits.</summary>
+    public Guid? DestinationMailboxId { get; set; }
+    public string? DestinationFolder { get; set; }
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? FetchStartedUtc { get; set; }
     public DateTimeOffset? DeliveryStartedUtc { get; set; }
     public DateTimeOffset? DestinationAppendStartedUtc { get; set; }
     public DateTimeOffset? DeliveredUtc { get; set; }
     public DateTimeOffset? ExpiresUtc { get; set; }
+    public DateTimeOffset? DeletionStartedUtc { get; set; }
+    public DateTimeOffset? DeletedUtc { get; set; }
     public DateTimeOffset? RetryRequestedUtc { get; set; }
     public string? RetryRequestedByUserId { get; set; }
     public string? LastFailureStage { get; set; }

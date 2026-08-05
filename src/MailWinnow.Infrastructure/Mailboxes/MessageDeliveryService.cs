@@ -12,6 +12,8 @@ public interface IMessageDeliveryService
     Task QueueApprovedAsync(string ownerUserId, Guid headerId, Guid? approvalRuleId = null, CancellationToken cancellationToken = default);
     Task DeliverAsync(Guid deliveryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Guid>> GetDueDeliveryIdsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Guid>> GetDueCleanupIdsAsync(CancellationToken cancellationToken = default);
+    Task CleanupExpiredAsync(Guid deliveryId, CancellationToken cancellationToken = default);
     Task<MailboxOperationResult> RetryAsync(ClaimsPrincipal actor, Guid deliveryId, CancellationToken cancellationToken = default);
 }
 
@@ -43,6 +45,46 @@ public sealed class MessageDeliveryService(
                 (x.State == MessageDeliveryState.Fetching && x.FetchStartedUtc < staleBefore) ||
                 (x.State == MessageDeliveryState.Delivering && x.DeliveryStartedUtc < staleBefore))
             .OrderBy(x => x.CreatedUtc).Select(x => x.Id).ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetDueCleanupIdsAsync(CancellationToken cancellationToken = default)
+    {
+        var staleBefore = DateTimeOffset.UtcNow.Subtract(InFlightRecoveryAge);
+        return await db.MessageDeliveries.AsNoTracking()
+            .Where(x => (x.State == MessageDeliveryState.Delivered && x.ExpiresUtc <= DateTimeOffset.UtcNow) ||
+                (x.State == MessageDeliveryState.Expired && x.DeletionStartedUtc < staleBefore))
+            .OrderBy(x => x.ExpiresUtc).Select(x => x.Id).ToArrayAsync(cancellationToken);
+    }
+
+    public async Task CleanupExpiredAsync(Guid deliveryId, CancellationToken cancellationToken = default)
+    {
+        var current = await db.MessageDeliveries.AsNoTracking().SingleOrDefaultAsync(x => x.Id == deliveryId, cancellationToken);
+        if (current is null || current.State == MessageDeliveryState.Deleted || current.ExpiresUtc is null || current.ExpiresUtc > DateTimeOffset.UtcNow) return;
+        var now = DateTimeOffset.UtcNow;
+        var staleBefore = now.Subtract(InFlightRecoveryAge);
+        if (current.State == MessageDeliveryState.Expired && current.DeletionStartedUtc >= staleBefore) return;
+        if (current.State is not (MessageDeliveryState.Delivered or MessageDeliveryState.Expired)) return;
+        var claimed = await db.MessageDeliveries.Where(x => x.Id == deliveryId && x.State == current.State &&
+            (current.State != MessageDeliveryState.Expired || x.DeletionStartedUtc == current.DeletionStartedUtc))
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.State, MessageDeliveryState.Expired).SetProperty(x => x.DeletionStartedUtc, now), cancellationToken);
+        if (claimed != 1) return;
+
+        var delivery = await db.MessageDeliveries.SingleAsync(x => x.Id == deliveryId, cancellationToken);
+        if (delivery.DestinationMailboxId is null || string.IsNullOrWhiteSpace(delivery.DestinationFolder) || delivery.DestinationUid is null || delivery.DestinationUidValidity is null)
+        { await CleanupFailedAsync(delivery, "The delivered message does not have a complete destination identity.", cancellationToken); return; }
+        var destination = await db.DestinationMailboxes.SingleOrDefaultAsync(x => x.Id == delivery.DestinationMailboxId && x.OwnerUserId == delivery.OwnerUserId, cancellationToken);
+        if (destination is null)
+        { await CleanupFailedAsync(delivery, "The destination mailbox used for this delivery is no longer available.", cancellationToken); return; }
+        var local = localImap.Value;
+        var connection = new ImapConnectionSettings(local.Host, local.Port, local.UseSsl, destination.Username,
+            credentials.Unprotect(destination.ProtectedCredential, CredentialKind.DestinationImapPassword));
+        var deleted = await imap.DeleteAndExpungeAsync(connection, delivery.DestinationFolder, [delivery.DestinationUid.Value], delivery.DestinationUidValidity.Value, cancellationToken);
+        if (!deleted.Succeeded) { await CleanupFailedAsync(delivery, deleted.Error ?? "The destination message could not be deleted.", cancellationToken); return; }
+        delivery.State = MessageDeliveryState.Deleted;
+        delivery.DeletedUtc = DateTimeOffset.UtcNow;
+        delivery.LastFailureStage = null;
+        delivery.SanitizedError = null;
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<MailboxOperationResult> RetryAsync(ClaimsPrincipal actor, Guid deliveryId, CancellationToken cancellationToken = default)
@@ -149,6 +191,8 @@ public sealed class MessageDeliveryService(
         delivery.DestinationAppendStartedUtc = delivery.DeliveryStartedUtc;
         delivery.DestinationUidValidity = destinationSnapshot.Value!.UidValidity;
         delivery.DestinationUidFloor = destinationSnapshot.Value.Uids.DefaultIfEmpty().Max();
+        delivery.DestinationMailboxId = destination.Id;
+        delivery.DestinationFolder = destination.Folder;
         await db.SaveChangesAsync(cancellationToken);
         var appended = await imap.AppendMessageAsync(destinationConnection, destination.Folder, fetched.Value!, cancellationToken, header.ReceivedUtc);
         if (!appended.Succeeded || appended.Value is null) { await FailAsync(delivery, "Delivery", appended.Error ?? "The destination append did not return a durable UID.", cancellationToken); return; }
@@ -206,6 +250,14 @@ public sealed class MessageDeliveryService(
         delivery.State = MessageDeliveryState.Failed;
         delivery.LastFailureStage = stage;
         delivery.SanitizedError = message.Length <= 512 ? message : "The IMAP operation could not be completed.";
+        await db.SaveChangesAsync(token);
+    }
+
+    private async Task CleanupFailedAsync(MessageDelivery delivery, string message, CancellationToken token)
+    {
+        delivery.State = MessageDeliveryState.Expired;
+        delivery.LastFailureStage = "Cleanup";
+        delivery.SanitizedError = message.Length <= 512 ? message : "The destination message could not be deleted.";
         await db.SaveChangesAsync(token);
     }
 
