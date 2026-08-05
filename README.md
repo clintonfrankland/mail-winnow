@@ -61,3 +61,7 @@ Use separate passwords for production and development. Store the resulting appli
 Mailbox passwords, app passwords, destination passwords, and future OAuth refresh tokens must be stored only through `ICredentialProtectionService`. The abstraction uses purpose-separated ASP.NET Core Data Protection payloads and never exposes a read/display model. A missing key-ring configuration or mount fails host startup, while corrupt payloads and unavailable keys raise a safe `CredentialProtectionException` without including plaintext.
 
 Both Web and Worker read `DataProtection:KeyRingPath` (`DataProtection__KeyRingPath` as an environment variable) and use the fixed `MailWinnow` application discriminator. In containers, merge `deploy/compose.data-protection.yaml` into the deployment Compose configuration so both services mount the same named volume. Back up this volume with the database: losing its key files makes saved credentials intentionally undecryptable.
+
+## Destination IMAPS service
+
+[`deploy/dovecot`](deploy/dovecot/README.md) contains a standalone Dovecot IMAPS Compose template for household destination mailboxes. It deliberately excludes SMTP and Postfix; use it only as the local IMAP target for approved messages. The template documents password-file users, TLS, persistence, backups, and its disposable smoke test.

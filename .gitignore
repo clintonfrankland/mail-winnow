@@ -13,5 +13,9 @@ secrets.json
 appsettings.Local.json
 data-protection-keys/
 
+# Dovecot deployment credentials and generated TLS material
+deploy/dovecot/config/users
+deploy/dovecot/config/tls/
+
 # EF tooling on Unix can emit BuildHost artifacts under a literal backslash path.
 **/bin\\Debug/

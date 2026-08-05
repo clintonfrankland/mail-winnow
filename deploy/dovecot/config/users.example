@@ -1,0 +1,3 @@
+# One line per virtual IMAP user. Replace this file with config/users; do not commit it.
+# Generate the hash with: docker compose run --rm --no-deps --entrypoint doveadm dovecot pw -s SHA512-CRYPT
+# Format: address@example.test:{SHA512-CRYPT}$6$replace-with-a-generated-hash
