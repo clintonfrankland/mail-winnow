@@ -93,15 +93,36 @@ public sealed class MessageDeliveryService(
         {
             var recovered = await imap.GetFolderSnapshotAsync(destinationConnection, destination.Folder, cancellationToken);
             if (!recovered.Succeeded) { await FailAsync(delivery, "Delivery", "The destination append outcome could not be reconciled.", cancellationToken); return; }
-            var appendedUid = recovered.Value!.UidValidity == delivery.DestinationUidValidity
-                ? recovered.Value.Uids.Where(x => x > delivery.DestinationUidFloor.Value).Order().FirstOrDefault()
-                : 0;
-            if (appendedUid != 0)
+            if (recovered.Value!.UidValidity != delivery.DestinationUidValidity)
             {
-                delivery.DestinationUid = appendedUid;
+                await FailAsync(delivery, "Delivery", "The destination folder identity changed before the append outcome could be reconciled.", cancellationToken);
+                return;
+            }
+
+            // APPEND can succeed even if its response is lost. Never treat an arbitrary
+            // post-snapshot UID as this delivery: correlate it to the original Message-ID.
+            // If that cannot be proven, do not risk appending a second copy.
+            var candidateUids = recovered.Value.Uids.Where(x => x > delivery.DestinationUidFloor.Value).Order().ToArray();
+            if (string.IsNullOrWhiteSpace(header.MessageId))
+            {
+                await FailAsync(delivery, "Delivery", "The ambiguous destination append cannot be reconciled because the source message has no Message-ID.", cancellationToken);
+                return;
+            }
+            var candidates = await imap.FetchHeadersAsync(destinationConnection, destination.Folder, candidateUids, delivery.DestinationUidValidity, cancellationToken);
+            if (!candidates.Succeeded)
+            {
+                await FailAsync(delivery, "Delivery", "The destination append outcome could not be reconciled.", cancellationToken);
+                return;
+            }
+            var matches = candidates.Value!.Where(x => string.Equals(x.MessageId, header.MessageId, StringComparison.Ordinal)).Select(x => x.Uid).Distinct().ToArray();
+            if (matches.Length == 1)
+            {
+                delivery.DestinationUid = matches[0];
                 await CompleteAsync(delivery, cancellationToken);
                 return;
             }
+            await FailAsync(delivery, "Delivery", "The ambiguous destination append could not be safely matched to the original message.", cancellationToken);
+            return;
         }
 
         delivery.State = MessageDeliveryState.Fetching;

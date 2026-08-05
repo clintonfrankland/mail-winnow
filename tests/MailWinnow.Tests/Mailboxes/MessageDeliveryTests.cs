@@ -69,6 +69,8 @@ public sealed class MessageDeliveryTests
     public async Task Crash_after_append_before_receipt_is_reconciled_without_a_duplicate()
     {
         await using var f = await Fixture.CreateAsync();
+        f.Imap.DestinationUids = [77];
+        f.Imap.DestinationHeaders = [f.Imap.Header(77, f.Header.MessageId!)];
         await f.Service.QueueApprovedAsync("owner", f.Header.Id);
         var delivery = await f.Db.MessageDeliveries.SingleAsync();
         delivery.State = MessageDeliveryState.Delivering;
@@ -83,6 +85,70 @@ public sealed class MessageDeliveryTests
         Assert.Equal(MessageDeliveryState.Delivered, delivery.State);
         Assert.Equal(77u, delivery.DestinationUid);
         Assert.Equal(0, f.Imap.AppendCalls);
+    }
+
+    [Fact]
+    public async Task Recovery_ignores_unrelated_post_floor_messages_and_matches_the_original_message_id()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Imap.DestinationUids = [77, 78];
+        f.Imap.DestinationHeaders = [f.Imap.Header(77, "<unrelated@example.test>"), f.Imap.Header(78, f.Header.MessageId!)];
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+        delivery.State = MessageDeliveryState.Delivering;
+        delivery.DeliveryStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-6);
+        delivery.DestinationUidValidity = 42;
+        delivery.DestinationUidFloor = 76;
+        await f.Db.SaveChangesAsync();
+
+        await f.Service.DeliverAsync(delivery.Id);
+
+        delivery = await f.Db.MessageDeliveries.SingleAsync();
+        Assert.Equal(MessageDeliveryState.Delivered, delivery.State);
+        Assert.Equal(78u, delivery.DestinationUid);
+        Assert.Equal(0, f.Imap.AppendCalls);
+    }
+
+    [Fact]
+    public async Task Recovery_does_not_claim_an_unrelated_post_floor_message()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Imap.DestinationUids = [77];
+        f.Imap.DestinationHeaders = [f.Imap.Header(77, "<unrelated@example.test>")];
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+        delivery.State = MessageDeliveryState.Delivering;
+        delivery.DeliveryStartedUtc = DateTimeOffset.UtcNow.AddMinutes(-6);
+        delivery.DestinationUidValidity = 42;
+        delivery.DestinationUidFloor = 76;
+        await f.Db.SaveChangesAsync();
+
+        await f.Service.DeliverAsync(delivery.Id);
+
+        delivery = await f.Db.MessageDeliveries.SingleAsync();
+        Assert.Equal(MessageDeliveryState.Failed, delivery.State);
+        Assert.Null(delivery.DestinationUid);
+        Assert.Equal(0, f.Imap.AppendCalls);
+    }
+
+    [Fact]
+    public async Task Ambiguous_accepted_append_with_no_visible_match_never_retries_another_append()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Imap.AppendResponseLost = true;
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var delivery = await f.Db.MessageDeliveries.SingleAsync();
+
+        await f.Service.DeliverAsync(delivery.Id);
+        Assert.Equal(MessageDeliveryState.Failed, (await f.Db.MessageDeliveries.SingleAsync()).State);
+        Assert.Equal(1, f.Imap.AppendCalls);
+
+        delivery.State = MessageDeliveryState.RetryPending;
+        await f.Db.SaveChangesAsync();
+        await f.Service.DeliverAsync(delivery.Id);
+
+        Assert.Equal(MessageDeliveryState.Failed, (await f.Db.MessageDeliveries.SingleAsync()).State);
+        Assert.Equal(1, f.Imap.AppendCalls);
     }
 
     [Fact]
@@ -132,7 +198,7 @@ public sealed class MessageDeliveryTests
             var db = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(connection).Options); await db.Database.EnsureCreatedAsync();
             var source = new SourceMailbox { OwnerUserId = "owner", DisplayName = "source", Host = "source.test", Port = 993, UseSsl = true, Username = "source", ProtectedCredential = "source" };
             var destination = new DestinationMailbox { OwnerUserId = "owner", Username = "destination", Folder = "INBOX", ProtectedCredential = "destination" };
-            var header = new SourceMessageHeader { SourceMailboxId = source.Id, FolderName = "INBOX", UidValidity = 1, Uid = 10, ReceivedUtc = DateTimeOffset.UtcNow, EvaluationOutcome = RuleOutcome.Allow };
+            var header = new SourceMessageHeader { SourceMailboxId = source.Id, FolderName = "INBOX", UidValidity = 1, Uid = 10, MessageId = "<original@example.test>", ReceivedUtc = DateTimeOffset.UtcNow, EvaluationOutcome = RuleOutcome.Allow };
             db.AddRange(source, destination, header); await db.SaveChangesAsync();
             header.EvaluationOutcome = RuleOutcome.Allow; await db.SaveChangesAsync();
             var imap = new FakeImap();
@@ -144,10 +210,15 @@ public sealed class MessageDeliveryTests
     private sealed class Protector : ICredentialProtectionService { public string Protect(string value, CredentialKind kind) => value; public string Unprotect(string value, CredentialKind kind) => value; }
     private sealed class FakeImap : IImapConnectionService
     {
-        public bool FetchFailure { get; set; } public int AppendCalls { get; private set; }
-        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) => Task.FromResult(FetchFailure ? ImapOperationResult<MimeMessage>.Failure(ImapFailureKind.Transient, "safe failure") : ImapOperationResult<MimeMessage>.Success(new MimeMessage { Subject = "original" }));
-        public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default, DateTimeOffset? receivedUtc = null) { AppendCalls++; return Task.FromResult(ImapOperationResult<uint?>.Success(77)); }
-        public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings c, string f, CancellationToken t = default) => Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(new(42, [77])));
-        public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint? v = null, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
+        public bool FetchFailure { get; set; } public bool AppendResponseLost { get; set; } public int AppendCalls { get; private set; }
+        public IReadOnlyList<uint> DestinationUids { get; set; } = [];
+        public IReadOnlyList<ImapMessageHeader> DestinationHeaders { get; set; } = [];
+        public ImapMessageHeader Header(uint uid, string messageId) => new(uid, messageId, null, null, null, null, null, null, null, null);
+        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) => Task.FromResult(FetchFailure ? ImapOperationResult<MimeMessage>.Failure(ImapFailureKind.Transient, "safe failure") : ImapOperationResult<MimeMessage>.Success(new MimeMessage { Subject = "original", MessageId = "<original@example.test>" }));
+        public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default, DateTimeOffset? receivedUtc = null) { AppendCalls++; return Task.FromResult(AppendResponseLost ? ImapOperationResult<uint?>.Failure(ImapFailureKind.Transient, "response lost") : ImapOperationResult<uint?>.Success(77)); }
+        public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings c, string f, CancellationToken t = default) => Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(new(42, DestinationUids)));
+        public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
+        public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint? v = null, CancellationToken t = default) => Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success(DestinationHeaders.Where(x => u.Contains(x.Uid)).ToArray()));
+        public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, CancellationToken t = default) => throw new NotSupportedException(); public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
     }
 }
