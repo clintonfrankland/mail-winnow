@@ -33,6 +33,26 @@ public sealed class MessageDeliveryTests
     }
 
     [Fact]
+    public async Task Concurrent_service_scopes_claim_a_delivery_atomically_before_appending()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Imap.HoldFetches = true;
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var deliveryId = (await f.Db.MessageDeliveries.SingleAsync()).Id;
+        await using var otherDb = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(f.Connection).Options);
+        var otherService = f.CreateService(otherDb);
+
+        var first = f.Service.DeliverAsync(deliveryId);
+        await f.Imap.FetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await otherService.DeliverAsync(deliveryId);
+        f.Imap.ReleaseFetches();
+        await first;
+
+        Assert.Equal(1, f.Imap.AppendCalls);
+        Assert.Equal(MessageDeliveryState.Delivered, (await f.Db.MessageDeliveries.SingleAsync()).State);
+    }
+
+    [Fact]
     public async Task Source_fetch_failure_is_recorded_separately_and_can_be_retried()
     {
         await using var f = await Fixture.CreateAsync();
@@ -191,7 +211,7 @@ public sealed class MessageDeliveryTests
 
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db, SourceMessageHeader header, FakeImap imap, MessageDeliveryService service) : IAsyncDisposable
     {
-        public MailWinnowDbContext Db { get; } = db; public SourceMessageHeader Header { get; } = header; public FakeImap Imap { get; } = imap; public MessageDeliveryService Service { get; } = service;
+        public SqliteConnection Connection { get; } = connection; public MailWinnowDbContext Db { get; } = db; public SourceMessageHeader Header { get; } = header; public FakeImap Imap { get; } = imap; public MessageDeliveryService Service { get; } = service;
         public static async Task<Fixture> CreateAsync()
         {
             var connection = new SqliteConnection("Data Source=:memory:"); await connection.OpenAsync();
@@ -205,16 +225,20 @@ public sealed class MessageDeliveryTests
             var service = new MessageDeliveryService(db, new Protector(), imap, Options.Create(new LocalImapOptions { Host = "local.test", Port = 993, UseSsl = true }), new OwnershipAuthorizer());
             return new(connection, db, header, imap, service);
         }
-        public async ValueTask DisposeAsync() { await Db.DisposeAsync(); await connection.DisposeAsync(); }
+        public MessageDeliveryService CreateService(MailWinnowDbContext context) => new(context, new Protector(), Imap, Options.Create(new LocalImapOptions { Host = "local.test", Port = 993, UseSsl = true }), new OwnershipAuthorizer());
+        public async ValueTask DisposeAsync() { await Db.DisposeAsync(); await Connection.DisposeAsync(); }
     }
     private sealed class Protector : ICredentialProtectionService { public string Protect(string value, CredentialKind kind) => value; public string Unprotect(string value, CredentialKind kind) => value; }
     private sealed class FakeImap : IImapConnectionService
     {
-        public bool FetchFailure { get; set; } public bool AppendResponseLost { get; set; } public int AppendCalls { get; private set; }
+        public bool FetchFailure { get; set; } public bool AppendResponseLost { get; set; } public bool HoldFetches { get; set; } public int AppendCalls { get; private set; }
+        public TaskCompletionSource FetchStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource fetchRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public IReadOnlyList<uint> DestinationUids { get; set; } = [];
         public IReadOnlyList<ImapMessageHeader> DestinationHeaders { get; set; } = [];
         public ImapMessageHeader Header(uint uid, string messageId) => new(uid, messageId, null, null, null, null, null, null, null, null);
-        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) => Task.FromResult(FetchFailure ? ImapOperationResult<MimeMessage>.Failure(ImapFailureKind.Transient, "safe failure") : ImapOperationResult<MimeMessage>.Success(new MimeMessage { Subject = "original", MessageId = "<original@example.test>" }));
+        public async Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) { FetchStarted.TrySetResult(); if (HoldFetches) await fetchRelease.Task.WaitAsync(t); return FetchFailure ? ImapOperationResult<MimeMessage>.Failure(ImapFailureKind.Transient, "safe failure") : ImapOperationResult<MimeMessage>.Success(new MimeMessage { Subject = "original", MessageId = "<original@example.test>" }); }
+        public void ReleaseFetches() => fetchRelease.TrySetResult();
         public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default, DateTimeOffset? receivedUtc = null) { AppendCalls++; return Task.FromResult(AppendResponseLost ? ImapOperationResult<uint?>.Failure(ImapFailureKind.Transient, "response lost") : ImapOperationResult<uint?>.Success(77)); }
         public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings c, string f, CancellationToken t = default) => Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(new(42, DestinationUids)));
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();

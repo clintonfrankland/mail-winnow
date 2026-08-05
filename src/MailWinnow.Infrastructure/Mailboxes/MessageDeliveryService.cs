@@ -63,23 +63,22 @@ public sealed class MessageDeliveryService(
 
     public async Task DeliverAsync(Guid deliveryId, CancellationToken cancellationToken = default)
     {
-        var delivery = await db.MessageDeliveries.SingleOrDefaultAsync(x => x.Id == deliveryId, cancellationToken);
-        if (delivery is null || delivery.State is MessageDeliveryState.Delivered or MessageDeliveryState.Deleted or MessageDeliveryState.Expired) return;
+        var current = await db.MessageDeliveries.AsNoTracking().SingleOrDefaultAsync(x => x.Id == deliveryId, cancellationToken);
+        if (current is null || current.State is MessageDeliveryState.Delivered or MessageDeliveryState.Deleted or MessageDeliveryState.Expired) return;
 
         // A persisted append receipt is finalizable without touching the source or destination again.
-        if (delivery.DestinationUid is not null && delivery.DestinationUidValidity is not null)
+        if (current.DestinationUid is not null && current.DestinationUidValidity is not null)
         {
-            await CompleteAsync(delivery, cancellationToken);
+            var receiptDelivery = await db.MessageDeliveries.SingleAsync(x => x.Id == deliveryId, cancellationToken);
+            await CompleteAsync(receiptDelivery, cancellationToken);
             return;
         }
 
-        var staleBefore = DateTimeOffset.UtcNow.Subtract(InFlightRecoveryAge);
-        if (delivery.State == MessageDeliveryState.Fetching && delivery.FetchStartedUtc < staleBefore)
-            delivery.State = MessageDeliveryState.RetryPending;
-        else if (delivery.State == MessageDeliveryState.Delivering && delivery.DeliveryStartedUtc < staleBefore)
-            // No receipt means append was never confirmed. Recovery can safely restart the transfer.
-            delivery.State = MessageDeliveryState.RetryPending;
-        if (delivery.State is not (MessageDeliveryState.Pending or MessageDeliveryState.RetryPending)) return;
+        // The conditional update is an atomic database-backed claim. A concurrent
+        // worker may read the row, but only the worker that changes it to Fetching
+        // may transfer the MIME message. Stale claims remain recoverable.
+        if (!await TryClaimAsync(current, cancellationToken)) return;
+        var delivery = await db.MessageDeliveries.SingleAsync(x => x.Id == deliveryId, cancellationToken);
 
         var header = await OwnedHeaderAsync(delivery.OwnerUserId, delivery.SourceMessageHeaderId, cancellationToken);
         var source = await db.SourceMailboxes.SingleAsync(x => x.Id == header.SourceMailboxId, cancellationToken);
@@ -125,9 +124,6 @@ public sealed class MessageDeliveryService(
             return;
         }
 
-        delivery.State = MessageDeliveryState.Fetching;
-        delivery.FetchStartedUtc = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
         var sourceConnection = new ImapConnectionSettings(source.Host, source.Port, source.UseSsl, source.Username,
             credentials.Unprotect(source.ProtectedCredential, CredentialKind.SourceImapPassword));
         var fetched = await imap.FetchMessageAsync(sourceConnection, header.FolderName, header.Uid, header.UidValidity, cancellationToken);
@@ -150,6 +146,26 @@ public sealed class MessageDeliveryService(
         delivery.DestinationUid = appended.Value;
         await db.SaveChangesAsync(cancellationToken);
         await CompleteAsync(delivery, cancellationToken);
+    }
+
+    private async Task<bool> TryClaimAsync(MessageDelivery current, CancellationToken token)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var staleBefore = now.Subtract(InFlightRecoveryAge);
+        if ((current.State == MessageDeliveryState.Fetching && current.FetchStartedUtc < staleBefore) ||
+            (current.State == MessageDeliveryState.Delivering && current.DeliveryStartedUtc < staleBefore))
+        {
+            // The timestamp is evaluated from the snapshot only to decide whether a
+            // crashed claim is eligible. The state transition itself is conditional.
+            await db.MessageDeliveries.Where(x => x.Id == current.Id && x.State == current.State)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.State, MessageDeliveryState.RetryPending), token);
+        }
+        var updated = await db.MessageDeliveries
+            .Where(x => x.Id == current.Id && (x.State == MessageDeliveryState.Pending || x.State == MessageDeliveryState.RetryPending))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.State, MessageDeliveryState.Fetching)
+                .SetProperty(x => x.FetchStartedUtc, now), token);
+        return updated == 1;
     }
 
     private async Task CompleteAsync(MessageDelivery delivery, CancellationToken token)
