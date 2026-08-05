@@ -52,13 +52,24 @@ public sealed class MessageDeliveryService(
         ownership.RequireOwner(actor, delivery.OwnerUserId);
         if (delivery.State is MessageDeliveryState.Delivered or MessageDeliveryState.Deleted or MessageDeliveryState.Expired)
             return new(false, "Completed or expired deliveries cannot be retried.");
-        delivery.State = MessageDeliveryState.RetryPending;
-        delivery.RetryRequestedUtc = DateTimeOffset.UtcNow;
-        delivery.RetryRequestedByUserId = ownership.RequireCurrentUserId(actor);
-        delivery.LastFailureStage = null;
-        delivery.SanitizedError = null;
-        await db.SaveChangesAsync(cancellationToken);
-        return new(true, "Delivery retry was queued.");
+
+        // An active Fetching/Delivering claim belongs to another worker. Never turn it
+        // into claimable work from an administrative request; doing so could overlap
+        // that worker's IMAP APPEND. The conditional update also handles a row that
+        // changed state after the authorization read above.
+        var retryRequestedUtc = DateTimeOffset.UtcNow;
+        var retryRequestedByUserId = ownership.RequireCurrentUserId(actor);
+        var updated = await db.MessageDeliveries
+            .Where(x => x.Id == deliveryId && x.State == MessageDeliveryState.Failed)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.State, MessageDeliveryState.RetryPending)
+                .SetProperty(x => x.RetryRequestedUtc, retryRequestedUtc)
+                .SetProperty(x => x.RetryRequestedByUserId, retryRequestedByUserId)
+                .SetProperty(x => x.LastFailureStage, (string?)null)
+                .SetProperty(x => x.SanitizedError, (string?)null), cancellationToken);
+        return updated == 1
+            ? new(true, "Delivery retry was queued.")
+            : new(false, "Only failed deliveries can be retried; active work remains claimed by its worker.");
     }
 
     public async Task DeliverAsync(Guid deliveryId, CancellationToken cancellationToken = default)

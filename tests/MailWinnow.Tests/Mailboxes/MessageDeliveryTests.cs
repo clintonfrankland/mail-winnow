@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using System.Reflection;
+using System.Security.Claims;
 
 namespace MailWinnow.Tests.Mailboxes;
 
@@ -80,6 +81,31 @@ public sealed class MessageDeliveryTests
         f.Imap.ReleaseFetches();
         await activeDelivery;
 
+        f.Db.ChangeTracker.Clear();
+        Assert.Equal(1, f.Imap.AppendCalls);
+        Assert.Equal(MessageDeliveryState.Delivered, (await f.Db.MessageDeliveries.SingleAsync()).State);
+    }
+
+    [Fact]
+    public async Task Administrative_retry_cannot_requeue_an_active_claim_or_append_a_second_copy()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Imap.HoldFetches = true;
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+        var deliveryId = (await f.Db.MessageDeliveries.SingleAsync()).Id;
+        await using var adminDb = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(f.Connection).Options);
+        var adminService = f.CreateService(adminDb);
+
+        var activeDelivery = f.Service.DeliverAsync(deliveryId);
+        await f.Imap.FetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var retry = await adminService.RetryAsync(Principal("owner"), deliveryId);
+        Assert.False(retry.Succeeded);
+
+        f.Imap.ReleaseFetches();
+        await activeDelivery;
+
+        f.Db.ChangeTracker.Clear();
         Assert.Equal(1, f.Imap.AppendCalls);
         Assert.Equal(MessageDeliveryState.Delivered, (await f.Db.MessageDeliveries.SingleAsync()).State);
     }
@@ -261,6 +287,7 @@ public sealed class MessageDeliveryTests
         public async ValueTask DisposeAsync() { await Db.DisposeAsync(); await Connection.DisposeAsync(); }
     }
     private sealed class Protector : ICredentialProtectionService { public string Protect(string value, CredentialKind kind) => value; public string Unprotect(string value, CredentialKind kind) => value; }
+    private static ClaimsPrincipal Principal(string userId) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], "Test"));
     private sealed class FakeImap : IImapConnectionService
     {
         public bool FetchFailure { get; set; } public bool AppendResponseLost { get; set; } public bool HoldFetches { get; set; } public int AppendCalls { get; private set; }
