@@ -1,5 +1,8 @@
 namespace MailWinnow.Tests.Review;
 
+using MailWinnow.Core.Rules;
+using MailWinnow.Web.Components.Pages;
+
 public sealed class ReviewDashboardAccessibilityTests
 {
     [Fact]
@@ -15,7 +18,19 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("<label for=\"domain-rule\">", source);
         Assert.Contains("Allow domain @domain", source);
         Assert.Contains("Replace this rule", source);
+        Assert.Contains("[SupplyParameterFromQuery(Name = \"outcome\")] public string? OutcomeQuery", source);
+        Assert.DoesNotContain("[SupplyParameterFromQuery] public RuleOutcome? Outcome", source);
     }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("not-a-status", null)]
+    [InlineData("Pending", RuleOutcome.Pending)]
+    [InlineData("allow", RuleOutcome.Allow)]
+    [InlineData("BLOCK", RuleOutcome.Block)]
+    public void OutcomeQueryIsParsedSafely(string? value, RuleOutcome? expected) =>
+        Assert.Equal(expected, ReviewQueryParser.ParseOutcome(value));
 
     private static string FindReviewPage()
     {

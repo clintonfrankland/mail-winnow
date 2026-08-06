@@ -27,6 +27,8 @@ dotnet test MailWinnow.sln --no-build
 
 `Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. The initial EF migration intentionally contains no application tables because no application entity model has been implemented yet.
 
+Blazor query-string filters must bind only framework-supported scalar types. For enum filters, bind the raw query value as `string`, parse it explicitly with `Enum.TryParse`, and treat missing or invalid values as an unfiltered request. Keep regression coverage for missing, valid, case-insensitive, and invalid values so a filter cannot prevent its page from rendering.
+
 ## Application migrations
 
 The application uses EF Core with SQL Server. `MailWinnowDbContext` reads the standard `ConnectionStrings:MailWinnow` configuration value, supplied in deployed environments through the scoped `ConnectionStrings__MailWinnow` variable. No host applies migrations during normal startup.

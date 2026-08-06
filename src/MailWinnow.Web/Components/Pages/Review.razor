@@ -47,7 +47,7 @@ else
     [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
     [SupplyParameterFromQuery] public string? View { get; set; }
     [SupplyParameterFromQuery] public Guid? SourceMailboxId { get; set; }
-    [SupplyParameterFromQuery] public RuleOutcome? Outcome { get; set; }
+    [SupplyParameterFromQuery(Name = "outcome")] public string? OutcomeQuery { get; set; }
     [SupplyParameterFromQuery] public string? Search { get; set; }
     [SupplyParameterFromQuery] public string? Error { get; set; }
     [SupplyParameterFromQuery] public string? Saved { get; set; }
@@ -56,6 +56,7 @@ else
     private IReadOnlyList<MessageReviewGroup> _senders = [];
     private IReadOnlyList<MessageReviewGroup> _subjects = [];
     private IReadOnlyList<ReviewRule> _rules = [];
+    private RuleOutcome? Outcome => ReviewQueryParser.ParseOutcome(OutcomeQuery);
     protected override async Task OnInitializedAsync() { View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; var filter = new MessageReviewFilter(SourceMailboxId, Outcome, Search); _sources = await MailboxService.ListSourcesAsync(HttpContext.User); _recent = await ReviewService.GetRecentAsync(HttpContext.User, filter); if (View == "sender") _senders = await ReviewService.GetBySenderAsync(HttpContext.User, filter); if (View == "subject") _subjects = await ReviewService.GetBySubjectAsync(HttpContext.User, filter); _rules = await ReviewService.GetRulesAsync(HttpContext.User); }
     private string Link(string view) => $"/review?view={view}&sourceMailboxId={SourceMailboxId}&outcome={Outcome}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
     private static string? SenderDomain(string sender) { var at = sender.LastIndexOf('@'); return at > 0 && at < sender.Length - 1 ? sender[(at + 1)..] : null; }
