@@ -3,13 +3,13 @@
 services:
   web:
     environment:
-      DataProtection__KeyRingPath: /var/lib/mailwinnow/data-protection-keys
+      DataProtection__KeysPath: /var/lib/mailwinnow/data-protection-keys
     volumes:
       - mailwinnow-data-protection:/var/lib/mailwinnow/data-protection-keys
 
   worker:
     environment:
-      DataProtection__KeyRingPath: /var/lib/mailwinnow/data-protection-keys
+      DataProtection__KeysPath: /var/lib/mailwinnow/data-protection-keys
     volumes:
       - mailwinnow-data-protection:/var/lib/mailwinnow/data-protection-keys
 

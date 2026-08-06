@@ -3,6 +3,7 @@ using MailWinnow.Web.Components;
 using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Web.Security;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,6 +45,11 @@ app.MapAccountEndpoints();
 app.MapMailboxEndpoints();
 app.MapReviewEndpoints();
 app.MapAdministrationEndpoints();
+app.MapGet("/healthz", async (MailWinnowDbContext database, CancellationToken cancellationToken) =>
+    await database.Database.CanConnectAsync(cancellationToken)
+        ? Results.Ok(new { status = "healthy" })
+        : Results.StatusCode(StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous();
 
 app.Run();
 

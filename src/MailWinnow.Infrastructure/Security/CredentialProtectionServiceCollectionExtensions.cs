@@ -6,18 +6,18 @@ namespace MailWinnow.Infrastructure.Security;
 
 public static class CredentialProtectionServiceCollectionExtensions
 {
-    public const string KeyRingPathConfigurationKey = "DataProtection:KeyRingPath";
+    public const string KeysPathConfigurationKey = "DataProtection:KeysPath";
     public const string ApplicationName = "MailWinnow";
 
     public static IServiceCollection AddMailWinnowCredentialProtection(
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var configuredPath = configuration[KeyRingPathConfigurationKey];
+        var configuredPath = configuration[KeysPathConfigurationKey];
         if (string.IsNullOrWhiteSpace(configuredPath))
         {
             throw new InvalidOperationException(
-                $"The {KeyRingPathConfigurationKey} configuration value is required. " +
+                $"The {KeysPathConfigurationKey} configuration value is required. " +
                 "It must identify the persistent key-ring directory shared by Web and Worker.");
         }
 

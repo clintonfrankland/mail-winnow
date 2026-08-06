@@ -60,8 +60,43 @@ Use separate passwords for production and development. Store the resulting appli
 
 Mailbox passwords, app passwords, destination passwords, and future OAuth refresh tokens must be stored only through `ICredentialProtectionService`. The abstraction uses purpose-separated ASP.NET Core Data Protection payloads and never exposes a read/display model. A missing key-ring configuration or mount fails host startup, while corrupt payloads and unavailable keys raise a safe `CredentialProtectionException` without including plaintext.
 
-Both Web and Worker read `DataProtection:KeyRingPath` (`DataProtection__KeyRingPath` as an environment variable) and use the fixed `MailWinnow` application discriminator. In containers, merge `deploy/compose.data-protection.yaml` into the deployment Compose configuration so both services mount the same named volume. Back up this volume with the database: losing its key files makes saved credentials intentionally undecryptable.
+Both Web and Worker read `DataProtection:KeysPath` (`DataProtection__KeysPath` as an environment variable) and use the fixed `MailWinnow` application discriminator. In containers, the deployment Compose configuration mounts the same named volume into both services. Back up this volume with the database: losing its key files makes saved credentials intentionally undecryptable.
 
 ## Destination IMAPS service
 
 [`deploy/dovecot`](deploy/dovecot/README.md) contains a standalone Dovecot IMAPS Compose template for household destination mailboxes. It deliberately excludes SMTP and Postfix; use it only as the local IMAP target for approved messages. The template documents password-file users, TLS, persistence, backups, and its disposable smoke test.
+
+## Home Helm container deployment
+
+[`deploy/docker-compose.home-helm.yml`](deploy/docker-compose.home-helm.yml) builds separate Web and Worker images plus a profile-gated one-shot migrator. All three run as the .NET image's non-root application user. Web listens on container port 8080 and exposes an anonymous `GET /healthz` check that returns 200 only when its scoped database is reachable. Worker writes its heartbeat to the shared database; administrators can observe it on the Web Operations page. Application logs go to stdout/stderr. Do not log configuration dumps, connection strings, credentials, or message bodies.
+
+Home Helm must maintain separate managed runtime env files for Production and Review. In each scope, set `ConnectionStrings__MailWinnow` to that scope's database and never copy one managed env file over the other. Compose requires the variable and passes it through the shared environment block to both Web and Worker. Use distinct Compose project names and named volumes per environment so Review cannot share Production's database or Data Protection keys.
+
+The complete non-secret contract is in [`deploy/mailwinnow.env.example`](deploy/mailwinnow.env.example). Production must retain these values:
+
+```text
+LocalImap__Host=mailwinnow-imap.clintandtara.com
+LocalImap__Port=993
+LocalImap__UseSsl=true
+LocalImap__AllowInvalidCertificate=false
+```
+
+`MailSync__PollingIntervalSeconds`, `MailSync__BatchSize`, and `MailSync__MaximumConcurrency` control Worker scheduling. Destination mailbox passwords are stored per household user through the application's encrypted credential store. They do not belong in the shared runtime env file. Delivery uses IMAP APPEND; this deployment adds no SMTP service.
+
+Build and start an environment from its Home Helm-managed env file without printing its contents:
+
+```sh
+docker compose --project-name mailwinnow-production \
+  --env-file /path/to/home-helm/production.env \
+  -f deploy/docker-compose.home-helm.yml up -d --build web worker
+```
+
+Run migrations only as an explicit, fail-fast one-shot operation before normal startup or during an approved deployment:
+
+```sh
+docker compose --project-name mailwinnow-production \
+  --env-file /path/to/home-helm/production.env \
+  -f deploy/docker-compose.home-helm.yml --profile migration run --rm migrate
+```
+
+For each environment, verify from both actual application containers that DNS resolves and the public TLS chain validates. `openssl s_client` must exit successfully without `-verify_none`; install/use an ephemeral diagnostic container in the same Compose network if the minimal runtime image lacks these tools. Then request `/healthz` and confirm the Operations page shows a current Worker heartbeat. Confirm database identity using a non-secret database name query from each container network, and compare it with the expected scoped database. Never print the connection variable itself in deployment output.

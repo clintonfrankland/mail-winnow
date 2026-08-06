@@ -1,0 +1,50 @@
+name: mailwinnow
+
+x-mailwinnow-environment: &mailwinnow-environment
+  ConnectionStrings__MailWinnow: ${ConnectionStrings__MailWinnow:?Home Helm must write the scoped database connection}
+  DataProtection__KeysPath: /var/lib/mailwinnow/data-protection-keys
+  LocalImap__Host: ${LocalImap__Host:-mailwinnow-imap.clintandtara.com}
+  LocalImap__Port: ${LocalImap__Port:-993}
+  LocalImap__UseSsl: ${LocalImap__UseSsl:-true}
+  LocalImap__AllowInvalidCertificate: ${LocalImap__AllowInvalidCertificate:-false}
+  MailSync__PollingIntervalSeconds: ${MailSync__PollingIntervalSeconds:-60}
+  MailSync__BatchSize: ${MailSync__BatchSize:-100}
+  MailSync__MaximumConcurrency: ${MailSync__MaximumConcurrency:-4}
+
+x-mailwinnow-service: &mailwinnow-service
+  restart: unless-stopped
+  environment: *mailwinnow-environment
+  volumes:
+    - mailwinnow-data-protection:/var/lib/mailwinnow/data-protection-keys
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  web:
+    <<: *mailwinnow-service
+    build:
+      context: ..
+      dockerfile: src/MailWinnow.Web/Dockerfile
+    ports:
+      - ${MAILWINNOW_PORT:-8080}:8080
+
+  worker:
+    <<: *mailwinnow-service
+    build:
+      context: ..
+      dockerfile: src/MailWinnow.Worker/Dockerfile
+
+  migrate:
+    profiles: ["migration"]
+    build:
+      context: ..
+      dockerfile: tools/MailWinnow.DbMigrator/Dockerfile
+    environment: *mailwinnow-environment
+    volumes:
+      - mailwinnow-data-protection:/var/lib/mailwinnow/data-protection-keys
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mailwinnow-data-protection:

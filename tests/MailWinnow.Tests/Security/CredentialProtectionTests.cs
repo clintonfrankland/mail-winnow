@@ -59,13 +59,13 @@ public sealed class CredentialProtectionTests : IDisposable
 
         var configurationError = Assert.Throws<InvalidOperationException>(() =>
             services.AddMailWinnowCredentialProtection(missingConfiguration));
-        Assert.Contains("DataProtection:KeyRingPath", configurationError.Message, StringComparison.Ordinal);
+        Assert.Contains("DataProtection:KeysPath", configurationError.Message, StringComparison.Ordinal);
 
         var absentPath = Path.Combine(testRoot, "absent");
         var absentMount = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [CredentialProtectionServiceCollectionExtensions.KeyRingPathConfigurationKey] = absentPath
+                [CredentialProtectionServiceCollectionExtensions.KeysPathConfigurationKey] = absentPath
             })
             .Build();
 
@@ -94,7 +94,7 @@ public sealed class CredentialProtectionTests : IDisposable
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [CredentialProtectionServiceCollectionExtensions.KeyRingPathConfigurationKey] = keyRingPath
+                [CredentialProtectionServiceCollectionExtensions.KeysPathConfigurationKey] = keyRingPath
             })
             .Build();
         var services = new ServiceCollection();
