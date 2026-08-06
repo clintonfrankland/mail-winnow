@@ -1,6 +1,7 @@
 namespace MailWinnow.Worker;
 
 using MailWinnow.Infrastructure.Mailboxes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSyncQueue queue, IOptions<MailSyncOptions> options) : BackgroundService
@@ -15,8 +16,14 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
                 await using (var heartbeatScope = scopes.CreateAsyncScope())
                 {
                     var heartbeatDb = heartbeatScope.ServiceProvider.GetRequiredService<MailWinnow.Infrastructure.Persistence.MailWinnowDbContext>();
-                    var heartbeat = await heartbeatDb.WorkerHeartbeats.FindAsync([1], stoppingToken) ?? new MailWinnow.Infrastructure.Security.WorkerHeartbeat { Id = 1 };
-                    if (heartbeatDb.Entry(heartbeat).State == Microsoft.EntityFrameworkCore.EntityState.Detached) heartbeatDb.WorkerHeartbeats.Add(heartbeat);
+                    var heartbeat = await heartbeatDb.WorkerHeartbeats
+                        .OrderBy(entry => entry.Id)
+                        .FirstOrDefaultAsync(stoppingToken)
+                        ?? new MailWinnow.Infrastructure.Security.WorkerHeartbeat();
+                    if (heartbeatDb.Entry(heartbeat).State == Microsoft.EntityFrameworkCore.EntityState.Detached)
+                    {
+                        heartbeatDb.WorkerHeartbeats.Add(heartbeat);
+                    }
                     heartbeat.LastSeenUtc = DateTimeOffset.UtcNow; heartbeat.Status = "Running";
                     await heartbeatDb.SaveChangesAsync(stoppingToken);
                 }

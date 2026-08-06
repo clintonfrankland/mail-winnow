@@ -100,3 +100,5 @@ docker compose --project-name mailwinnow-production \
 ```
 
 For each environment, verify from both actual application containers that DNS resolves and the public TLS chain validates. `openssl s_client` must exit successfully without `-verify_none`; install/use an ephemeral diagnostic container in the same Compose network if the minimal runtime image lacks these tools. Then request `/healthz` and confirm the Operations page shows a current Worker heartbeat. Confirm database identity using a non-secret database name query from each container network, and compare it with the expected scoped database. Never print the connection variable itself in deployment output.
+
+The credential-safe `MailWinnow.DeploymentProbe` performs those database, DNS, TCP, and strict TLS checks using the actual container environment. Publish it, copy the output directory into each running Web and Worker container, and execute `dotnet MailWinnow.DeploymentProbe.dll` there. Its JSON output contains only the database name, connectivity booleans, heartbeat freshness, TLS protocol, and the invalid-certificate-bypass state. It never emits the connection string or mailbox credentials.

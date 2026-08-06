@@ -17,6 +17,16 @@ public sealed class ContainerContractTests
         Assert.DoesNotContain("database update", dockerfile, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("src/MailWinnow.Worker/Dockerfile")]
+    [InlineData("tools/MailWinnow.DbMigrator/Dockerfile")]
+    public void InfrastructureHostsIncludeAspNetSharedFramework(string relativePath)
+    {
+        var dockerfile = File.ReadAllText(Path.Combine(RepositoryRoot, relativePath));
+
+        Assert.Contains("FROM mcr.microsoft.com/dotnet/aspnet:10.0", dockerfile, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ComposePassesSharedAndEnvironmentScopedConfigurationToBothHosts()
     {

@@ -21,7 +21,7 @@ public sealed class AuditEvent
 
 public sealed class WorkerHeartbeat
 {
-    public int Id { get; set; } = 1;
+    public int Id { get; set; }
     public DateTimeOffset LastSeenUtc { get; set; }
     public string Status { get; set; } = "Starting";
 }
@@ -56,7 +56,9 @@ public sealed class AdministrationService(MailWinnowDbContext db, IOptions<Local
     {
         RequireAdministrator(actor);
         var databaseHealthy = await db.Database.CanConnectAsync(cancellationToken);
-        var heartbeat = await db.WorkerHeartbeats.AsNoTracking().SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
+        var heartbeat = await db.WorkerHeartbeats.AsNoTracking()
+            .OrderBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
         var mailboxes = await db.SourceMailboxes.AsNoTracking().OrderBy(x => x.DisplayName)
             .Select(x => new AdministrationMailboxStatus(x.Id, x.OwnerUserId, x.DisplayName, x.Enabled, x.PollingStatus, x.LastSyncSucceededUtc, x.SanitizedError)).ToArrayAsync(cancellationToken);
         var audit = await db.AuditEvents.AsNoTracking().OrderByDescending(x => x.OccurredUtc).Take(100).ToArrayAsync(cancellationToken);
