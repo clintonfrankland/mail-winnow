@@ -8,7 +8,7 @@ endpoints="$repo_root/src/MailWinnow.Web/Security/MailboxEndpoints.cs"
 grep -Fq 'action="/mailboxes/source/save"' "$page"
 grep -Fq 'name="UseSsl" type="checkbox"' "$page"
 
-new_source_form="$(awk '/<h3>Add source account<\/h3>/{capture=1} capture{print} /<\/form>/{if(capture) exit}' "$page")"
+new_source_form="$(awk '/<h3 class="h5">Add source mailbox<\/h3>/{capture=1} capture{print} /<\/form>/{if(capture) exit}' "$page")"
 if grep -Fq 'name="Id"' <<<"$new_source_form"; then
   echo 'mailbox form contract failed: new source form must omit Id' >&2
   exit 1
@@ -18,5 +18,15 @@ grep -Fq 'public sealed class SourceRequest' "$endpoints"
 grep -Fq 'public Guid? Id { get; init; }' "$endpoints"
 grep -Fq 'public bool UseSsl { get; init; }' "$endpoints"
 grep -Fq 'public bool Enabled { get; init; }' "$endpoints"
+
+grep -Fq '>Source mailboxes</h2>' "$page"
+grep -Fq '>Add source</summary>' "$page"
+grep -Fq '>Destination mailbox</h2>' "$page"
+grep -Fq 'Credential stored' "$page"
+grep -Fq 'Password</dt><dd>••••••••</dd>' "$page"
+if grep -Fq 'ProtectedCredential' "$page"; then
+  echo 'mailbox form contract failed: protected credentials must not be rendered' >&2
+  exit 1
+fi
 
 echo 'mailbox form contract passed'

@@ -1,0 +1,31 @@
+.mailbox-section { margin-top: 2rem; }
+.section-heading { align-items: flex-start; display: flex; gap: 1rem; justify-content: space-between; margin-bottom: 1rem; }
+.section-heading h2 { margin-bottom: .25rem; }
+.mailbox-editor > summary { list-style: none; white-space: nowrap; }
+.mailbox-editor > summary::-webkit-details-marker { display: none; }
+.add-source-editor[open] { width: min(100%, 34rem); }
+.source-form, .destination-form { gap: .75rem; min-width: min(30rem, calc(100vw - 4rem)); }
+.form-label { font-weight: 600; margin: 0; }
+.form-label .form-control { font-weight: 400; margin-top: .25rem; }
+.mailbox-list { border: 1px solid var(--bs-border-color); border-radius: .5rem; }
+.mailbox-list thead th { background: var(--bs-tertiary-bg); white-space: nowrap; }
+.source-actions { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: flex-end; min-width: 15rem; }
+.row-editor { position: relative; }
+.row-editor[open] form { position: absolute; right: 0; top: calc(100% + .35rem); width: 32rem; z-index: 10; }
+.folder-selection td { background: var(--bs-tertiary-bg); }
+.folder-options { display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }
+.empty-state { background: var(--bs-tertiary-bg); border: 1px dashed var(--bs-border-color); border-radius: .5rem; padding: 1.5rem; }
+.destination-card { max-width: 54rem; }
+.destination-status { align-items: flex-start; display: flex; gap: 1rem; justify-content: space-between; }
+.credential-status { color: var(--bs-success-text-emphasis); font-weight: 600; }
+.credential-status::before { content: "✓ "; }
+.destination-values { display: grid; gap: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 1.5rem 0; }
+.destination-values div { border-top: 1px solid var(--bs-border-color); padding: .75rem; }
+.destination-values dt { color: var(--bs-secondary-color); font-size: .8rem; font-weight: 600; text-transform: uppercase; }
+.destination-values dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+@media (max-width: 767.98px) {
+    .section-heading { align-items: stretch; flex-direction: column; }
+    .add-source-editor[open] { width: 100%; }
+    .destination-values { grid-template-columns: 1fr 1fr; }
+    .row-editor[open] form { position: fixed; inset: 1rem; max-height: calc(100vh - 2rem); overflow: auto; width: auto; }
+}

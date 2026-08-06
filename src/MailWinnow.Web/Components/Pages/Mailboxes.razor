@@ -1,57 +1,109 @@
 @page "/mailboxes"
 @attribute [Authorize]
 @inject IMailboxConfigurationService MailboxService
+@inject Microsoft.Extensions.Options.IOptions<LocalImapOptions> LocalImap
 
 <PageTitle>Mailboxes</PageTitle>
 <h1>Mailboxes</h1>
-@if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger">@Error</div> }
-@if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success">@Saved</div> }
+<p class="text-body-secondary">Manage the source accounts Mail Winnow monitors and the single local mailbox that receives approved messages.</p>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
+@if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
 
-<h2>Source IMAP accounts</h2>
-@foreach (var source in _sources)
-{
-    <section class="card p-3 mb-3">
-        <strong>@source.DisplayName</strong> — @source.Username@@@source.Host:@source.Port (@(source.UseSsl ? "TLS" : "STARTTLS"))
-        <div>@(source.Enabled ? "Enabled" : "Disabled") · @source.PollingStatus · @(source.LastSuccessfulConnectionUtc?.ToString("u") ?? "Not tested")</div>
-        @if (!string.IsNullOrWhiteSpace(source.SanitizedError)) { <div class="text-danger">@source.SanitizedError</div> }
-        <form method="post" action="/mailboxes/source/sync" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><button class="btn btn-primary mt-2" disabled="@(!source.Enabled)">Sync now</button></form>
-        <form method="post" action="/mailboxes/source/enabled" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@(!source.Enabled)" /><button class="btn btn-secondary mt-2">@(source.Enabled ? "Disable" : "Enable")</button></form>
-        <form method="post" action="/mailboxes/source/test" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="DiscoverFolders" value="true" /><button class="btn btn-secondary mt-2">Test and discover folders</button></form>
-        @if (DiscoveredSourceId == source.Id && DiscoveredFolders.Count > 0)
-        {
-            <form method="post" action="/mailboxes/source/folders/save" class="mt-3">
-                <AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" />
-                <div>Discovered folders — select the folders to monitor:</div>
-                @foreach (var folder in DiscoveredFolders)
-                {
-                    <label class="d-block"><input type="checkbox" name="SelectedFolders" value="@folder" checked="@source.SelectedFolders.Contains(folder)" /> @folder</label>
-                }
-                <button class="btn btn-primary mt-2">Save selected folders</button>
+<section class="mailbox-section" aria-labelledby="source-mailboxes-heading">
+    <div class="section-heading">
+        <div>
+            <h2 id="source-mailboxes-heading">Source mailboxes</h2>
+            <p class="text-body-secondary mb-0">Add one or more production mailboxes to monitor.</p>
+        </div>
+        <details class="mailbox-editor add-source-editor">
+            <summary class="btn btn-primary">Add source</summary>
+            <form method="post" action="/mailboxes/source/save" class="card card-body mt-3 source-form">
+                <h3 class="h5">Add source mailbox</h3><AntiforgeryToken />
+                <label class="form-label">Display name<input class="form-control" name="DisplayName" required /></label>
+                <label class="form-label">IMAP host<input class="form-control" name="Host" required /></label>
+                <label class="form-label">Port<input class="form-control" name="Port" type="number" min="1" max="65535" value="993" required /></label>
+                <label class="form-label">Username<input class="form-control" name="Username" required /></label>
+                <label class="form-label">Password<input class="form-control" name="Password" type="password" autocomplete="new-password" required /></label>
+                <label class="form-label">Selected folders<input class="form-control" name="SelectedFolders" placeholder="INBOX, Archive" /></label>
+                <label class="form-check"><input class="form-check-input" name="UseSsl" type="checkbox" value="true" checked /> Use TLS</label>
+                <input type="hidden" name="Enabled" value="true" />
+                <button class="btn btn-primary align-self-start">Save source</button>
             </form>
-        }
-        <details class="mt-2"><summary>Edit</summary><form method="post" action="/mailboxes/source/save"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@source.Enabled" /><input class="form-control mb-2" name="DisplayName" value="@source.DisplayName" required /><input class="form-control mb-2" name="Host" value="@source.Host" required /><input class="form-control mb-2" name="Port" type="number" value="@source.Port" required /><input class="form-control mb-2" name="Username" value="@source.Username" required /><input class="form-control mb-2" name="Password" type="password" placeholder="New password (leave blank to keep current)" /><input class="form-control mb-2" name="SelectedFolders" value="@string.Join(',', source.SelectedFolders)" placeholder="Selected folders, comma-separated" /><label><input name="UseSsl" type="checkbox" value="true" checked="@source.UseSsl" /> Use TLS</label><button class="btn btn-primary mt-2">Save changes</button></form></details>
-    </section>
-}
-<form method="post" action="/mailboxes/source/save" class="card p-3 mb-4">
-    <h3>Add source account</h3><AntiforgeryToken />
-    <input class="form-control mb-2" name="DisplayName" placeholder="Display name" required />
-    <input class="form-control mb-2" name="Host" placeholder="IMAP host" required />
-    <input class="form-control mb-2" name="Port" type="number" min="1" max="65535" value="993" required />
-    <input class="form-control mb-2" name="Username" placeholder="Username" required />
-    <input class="form-control mb-2" name="Password" type="password" placeholder="Password (stored encrypted)" required />
-    <input class="form-control mb-2" name="SelectedFolders" placeholder="Selected folders, comma-separated" />
-    <label><input name="UseSsl" type="checkbox" value="true" checked /> Use TLS</label><input type="hidden" name="Enabled" value="true" />
-    <button class="btn btn-primary mt-2">Save source</button>
-</form>
+        </details>
+    </div>
 
-<h2>Destination mailbox</h2>
-<form method="post" action="/mailboxes/destination/save" class="card p-3">
-    <AntiforgeryToken /><input class="form-control mb-2" name="Username" value="@_destination?.Username" placeholder="Destination username" required />
-    <input class="form-control mb-2" name="Password" type="password" placeholder="@(_destination is null ? "Password (stored encrypted)" : "New password (leave blank to keep current)")" required="@(_destination is null)" />
-    <input class="form-control mb-2" name="Folder" value="@_destination?.Folder" placeholder="Destination folder" required />
-    <label><input name="Enabled" type="checkbox" value="true" checked="@(_destination?.Enabled ?? true)" /> Enabled</label>
-    <button class="btn btn-primary mt-2">Save destination</button>
-</form>
+    @if (_sources.Count == 0)
+    {
+        <div class="empty-state">No source mailboxes have been added yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive mailbox-list">
+            <table class="table align-middle mb-0">
+                <thead><tr><th>Source</th><th>Folders</th><th>Status</th><th>Last connection</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>
+                @foreach (var source in _sources)
+                {
+                    <tr>
+                        <td><strong>@source.DisplayName</strong><div class="small text-body-secondary">@source.Username@@@source.Host:@source.Port · @(source.UseSsl ? "TLS" : "STARTTLS")</div></td>
+                        <td>@(source.SelectedFolders.Count == 0 ? "None selected" : string.Join(", ", source.SelectedFolders))</td>
+                        <td><span class="badge @(source.Enabled ? "text-bg-success" : "text-bg-secondary")">@(source.Enabled ? "Enabled" : "Disabled")</span>@if (!string.IsNullOrWhiteSpace(source.PollingStatus)) { <div class="small mt-1">@source.PollingStatus</div> }</td>
+                        <td>@(source.LastSuccessfulConnectionUtc?.ToString("u") ?? "Not tested")@if (!string.IsNullOrWhiteSpace(source.SanitizedError)) { <div class="small text-danger">@source.SanitizedError</div> }</td>
+                        <td class="source-actions">
+                            <form method="post" action="/mailboxes/source/sync"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><button class="btn btn-sm btn-primary" disabled="@(!source.Enabled)">Sync</button></form>
+                            <form method="post" action="/mailboxes/source/test"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="DiscoverFolders" value="true" /><button class="btn btn-sm btn-outline-secondary">Test</button></form>
+                            <form method="post" action="/mailboxes/source/enabled"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@(!source.Enabled)" /><button class="btn btn-sm btn-outline-secondary">@(source.Enabled ? "Disable" : "Enable")</button></form>
+                            <details class="mailbox-editor row-editor"><summary class="btn btn-sm btn-outline-secondary">Edit</summary>
+                                <form method="post" action="/mailboxes/source/save" class="card card-body source-form"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@source.Enabled" />
+                                    <label class="form-label">Display name<input class="form-control" name="DisplayName" value="@source.DisplayName" required /></label>
+                                    <label class="form-label">IMAP host<input class="form-control" name="Host" value="@source.Host" required /></label>
+                                    <label class="form-label">Port<input class="form-control" name="Port" type="number" min="1" max="65535" value="@source.Port" required /></label>
+                                    <label class="form-label">Username<input class="form-control" name="Username" value="@source.Username" required /></label>
+                                    <label class="form-label">New password<input class="form-control" name="Password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current" /></label>
+                                    <label class="form-label">Selected folders<input class="form-control" name="SelectedFolders" value="@string.Join(',', source.SelectedFolders)" /></label>
+                                    <label class="form-check"><input class="form-check-input" name="UseSsl" type="checkbox" value="true" checked="@source.UseSsl" /> Use TLS</label>
+                                    <button class="btn btn-primary align-self-start">Save changes</button>
+                                </form>
+                            </details>
+                        </td>
+                    </tr>
+                    @if (DiscoveredSourceId == source.Id && DiscoveredFolders.Count > 0)
+                    {
+                        <tr class="folder-selection"><td colspan="5"><form method="post" action="/mailboxes/source/folders/save"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><strong>Choose folders to monitor</strong>
+                            <div class="folder-options">@foreach (var folder in DiscoveredFolders) { <label class="form-check"><input class="form-check-input" type="checkbox" name="SelectedFolders" value="@folder" checked="@source.SelectedFolders.Contains(folder)" /> @folder</label> }</div>
+                            <button class="btn btn-sm btn-primary">Save folders</button></form></td></tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="mailbox-section" aria-labelledby="destination-mailbox-heading">
+    <div class="section-heading"><div><h2 id="destination-mailbox-heading">Destination mailbox</h2><p class="text-body-secondary mb-0">All approved messages from your sources are delivered here.</p></div></div>
+    @if (_destination is not null)
+    {
+        <div class="card destination-card">
+            <div class="card-body">
+                <div class="destination-status"><div><h3 class="h5 mb-1">@_destination.Username → @_destination.Folder</h3><span class="badge @(_destination.Enabled ? "text-bg-success" : "text-bg-secondary")">@(_destination.Enabled ? "Configured and enabled" : "Disabled")</span></div><span class="credential-status">Credential stored</span></div>
+                <dl class="destination-values">
+                    <div><dt>Username</dt><dd>@_destination.Username</dd></div>
+                    <div><dt>Host</dt><dd>@LocalImap.Value.Host</dd></div>
+                    <div><dt>Port</dt><dd>@LocalImap.Value.Port</dd></div>
+                    <div><dt>Security</dt><dd>@(LocalImap.Value.UseSsl ? "Trusted TLS" : "STARTTLS")</dd></div>
+                    <div><dt>Folder</dt><dd>@_destination.Folder</dd></div>
+                    <div><dt>Password</dt><dd>••••••••</dd></div>
+                </dl>
+                <details class="mailbox-editor"><summary class="btn btn-outline-secondary">Edit destination</summary>@DestinationForm()</details>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state"><p>No destination mailbox is configured.</p><details class="mailbox-editor"><summary class="btn btn-primary">Configure destination</summary>@DestinationForm()</details></div>
+    }
+</section>
 
 @code {
     [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
@@ -63,4 +115,13 @@
     private IReadOnlyList<SourceMailboxSummary> _sources = [];
     private DestinationMailboxSummary? _destination;
     protected override async Task OnInitializedAsync() { _sources = await MailboxService.ListSourcesAsync(HttpContext.User); _destination = await MailboxService.GetDestinationAsync(HttpContext.User); }
+
+    private RenderFragment DestinationForm() => @<form method="post" action="/mailboxes/destination/save" class="card card-body mt-3 destination-form">
+        <AntiforgeryToken />
+        <label class="form-label">Username<input class="form-control" name="Username" value="@_destination?.Username" required /></label>
+        <label class="form-label">@(_destination is null ? "Password" : "New password")<input class="form-control" name="Password" type="password" autocomplete="new-password" placeholder="@(_destination is null ? "Stored encrypted" : "Leave blank to keep current")" required="@(_destination is null)" /></label>
+        <label class="form-label">Destination folder<input class="form-control" name="Folder" value="@_destination?.Folder" placeholder="INBOX" required /></label>
+        <label class="form-check"><input class="form-check-input" name="Enabled" type="checkbox" value="true" checked="@(_destination?.Enabled ?? true)" /> Enabled</label>
+        <button class="btn btn-primary align-self-start">Save destination</button>
+    </form>;
 }
