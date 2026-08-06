@@ -28,20 +28,29 @@ public sealed class WorkerHeartbeat
 
 public sealed record AdministrationSnapshot(bool DatabaseHealthy, string LocalImapStatus, DateTimeOffset? WorkerLastSeenUtc,
     int PendingHeaders, int PendingDeliveries, int FailedDeliveries, int ExpirationFailures,
-    IReadOnlyList<AdministrationMailboxStatus> Mailboxes, IReadOnlyList<AuditEvent> AuditEvents);
+    IReadOnlyList<AdministrationMailboxStatus> Mailboxes, IReadOnlyList<AdministrationDeliveryFailure> DeliveryFailures,
+    IReadOnlyList<AuditEvent> AuditEvents);
 public sealed record AdministrationMailboxStatus(Guid Id, string OwnerUserId, string DisplayName, bool Enabled, string? Status,
     DateTimeOffset? LastSuccessfulSyncUtc, string? SanitizedError);
+public sealed record AdministrationDeliveryFailure(Guid Id, string OwnerUserId, string? Stage, string? SanitizedError);
 
-public interface IAdministrationService
+/// <summary>Records metadata-only audit events. Implementations must never persist user supplied mail content or secrets.</summary>
+public interface IAuditRecorder
+{
+    Task RecordAsync(string eventType, string? actorUserId, string? subjectUserId = null, string? resourceType = null,
+        string? resourceId = null, string? detail = null, CancellationToken cancellationToken = default);
+}
+
+public interface IAdministrationService : IAuditRecorder
 {
     Task<AdministrationSnapshot> GetSnapshotAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default);
     Task<ServiceResult> QueueSyncAsync(ClaimsPrincipal actor, Guid mailboxId, CancellationToken cancellationToken = default);
     Task<ServiceResult> SetMailboxEnabledAsync(ClaimsPrincipal actor, Guid mailboxId, bool enabled, CancellationToken cancellationToken = default);
     Task<ServiceResult> RetryDeliveryAsync(ClaimsPrincipal actor, Guid deliveryId, CancellationToken cancellationToken = default);
-    Task RecordAsync(string eventType, string? actorUserId, string? subjectUserId = null, string? resourceType = null, string? resourceId = null, string? detail = null, CancellationToken cancellationToken = default);
 }
 
-public sealed class AdministrationService(MailWinnowDbContext db, IOptions<LocalImapOptions> localImap) : IAdministrationService
+public sealed class AdministrationService(MailWinnowDbContext db, IOptions<LocalImapOptions> localImap,
+    ILocalImapHealthChecker localImapHealth) : IAdministrationService
 {
     public async Task<AdministrationSnapshot> GetSnapshotAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default)
     {
@@ -51,14 +60,16 @@ public sealed class AdministrationService(MailWinnowDbContext db, IOptions<Local
         var mailboxes = await db.SourceMailboxes.AsNoTracking().OrderBy(x => x.DisplayName)
             .Select(x => new AdministrationMailboxStatus(x.Id, x.OwnerUserId, x.DisplayName, x.Enabled, x.PollingStatus, x.LastSyncSucceededUtc, x.SanitizedError)).ToArrayAsync(cancellationToken);
         var audit = await db.AuditEvents.AsNoTracking().OrderByDescending(x => x.OccurredUtc).Take(100).ToArrayAsync(cancellationToken);
+        var failures = await db.MessageDeliveries.AsNoTracking().Where(x => x.State == MessageDeliveryState.Failed)
+            .OrderBy(x => x.CreatedUtc).Take(100)
+            .Select(x => new AdministrationDeliveryFailure(x.Id, x.OwnerUserId, x.LastFailureStage, x.SanitizedError)).ToArrayAsync(cancellationToken);
         var options = localImap.Value;
-        var localStatus = string.IsNullOrWhiteSpace(options.Host) || options.Port <= 0
-            ? "Not configured" : "Configured; connectivity is verified by delivery attempts.";
+        var localStatus = await localImapHealth.CheckAsync(options, cancellationToken);
         return new(databaseHealthy, localStatus, heartbeat?.LastSeenUtc,
             await db.SourceMessageHeaders.CountAsync(x => x.EvaluationOutcome == Core.Rules.RuleOutcome.Pending, cancellationToken),
             await db.MessageDeliveries.CountAsync(x => x.State == MessageDeliveryState.Pending || x.State == MessageDeliveryState.RetryPending, cancellationToken),
             await db.MessageDeliveries.CountAsync(x => x.State == MessageDeliveryState.Failed, cancellationToken),
-            await db.MessageDeliveries.CountAsync(x => x.State == MessageDeliveryState.Expired && x.LastFailureStage == "Cleanup", cancellationToken), mailboxes, audit);
+            await db.MessageDeliveries.CountAsync(x => x.State == MessageDeliveryState.Expired && x.LastFailureStage == "Cleanup", cancellationToken), mailboxes, failures, audit);
     }
 
     public async Task<ServiceResult> QueueSyncAsync(ClaimsPrincipal actor, Guid mailboxId, CancellationToken cancellationToken = default)
@@ -88,7 +99,8 @@ public sealed class AdministrationService(MailWinnowDbContext db, IOptions<Local
     }
     public async Task RecordAsync(string eventType, string? actorUserId, string? subjectUserId = null, string? resourceType = null, string? resourceId = null, string? detail = null, CancellationToken cancellationToken = default)
     {
-        db.AuditEvents.Add(new AuditEvent { EventType = eventType, ActorUserId = actorUserId, SubjectUserId = subjectUserId, ResourceType = resourceType, ResourceId = resourceId, Detail = detail });
+        // Free-form detail can be a mail body, attachment text, or credential. Retain only operation metadata.
+        db.AuditEvents.Add(new AuditEvent { EventType = eventType, ActorUserId = actorUserId, SubjectUserId = subjectUserId, ResourceType = resourceType, ResourceId = resourceId, Detail = null });
         await db.SaveChangesAsync(cancellationToken);
     }
     private static string RequireAdministrator(ClaimsPrincipal actor) => actor.IsInRole(AuthConstants.AdministratorRole)

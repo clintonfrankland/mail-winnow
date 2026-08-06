@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
         services.AddScoped<IMailboxConfigurationService, MailboxConfigurationService>();
         services.AddScoped<IImapConnectionService, ImapConnectionService>();
+        services.AddScoped<ILocalImapHealthChecker, LocalImapHealthChecker>();
         services.AddScoped<ISourceMailboxSyncLockProvider, SqlServerAccountLockProvider>();
         services.AddScoped<ISourceMailboxSynchronizer, SourceMailboxSynchronizer>();
         services.AddScoped<IRuleEvaluationService, RuleEvaluationService>();
@@ -49,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMessageReviewService, MessageReviewService>();
         services.AddScoped<IMessageDeliveryService, MessageDeliveryService>();
         services.AddScoped<IAdministrationService, AdministrationService>();
+        services.AddScoped<IAuditRecorder>(provider => provider.GetRequiredService<IAdministrationService>());
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
         return services;
     }

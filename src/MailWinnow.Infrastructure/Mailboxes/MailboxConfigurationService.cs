@@ -32,7 +32,8 @@ public sealed class MailboxConfigurationService(
     IOwnershipAuthorizer ownership,
     ICredentialProtectionService credentials,
     IOptions<LocalImapOptions> localImapOptions,
-    IImapConnectionService imap) : IMailboxConfigurationService
+    IImapConnectionService imap,
+    IAuditRecorder? audit = null) : IMailboxConfigurationService
 {
     public async Task<IReadOnlyList<SourceMailboxSummary>> ListSourcesAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default)
     {
@@ -56,6 +57,7 @@ public sealed class MailboxConfigurationService(
         if (!IsValid(input.DisplayName, input.Host, input.Port, input.Username)) return Invalid();
         var folders = NormalizeFolders(input.SelectedFolders);
         SourceMailbox? source = null;
+        var created = id is null;
         if (id is { } sourceId)
         {
             source = await db.SourceMailboxes.SingleOrDefaultAsync(x => x.Id == sourceId, cancellationToken);
@@ -73,6 +75,7 @@ public sealed class MailboxConfigurationService(
         source.SelectedFoldersJson = JsonSerializer.Serialize(folders);
         if (!string.IsNullOrWhiteSpace(input.Password)) source.ProtectedCredential = credentials.Protect(input.Password, CredentialKind.SourceImapPassword);
         await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync(created ? "account.source.created" : "account.source.updated", ownerId, ownerId, "sourceMailbox", source.Id.ToString("N"), cancellationToken: cancellationToken);
         return new(true, "Source mailbox saved.");
     }
 
@@ -81,7 +84,9 @@ public sealed class MailboxConfigurationService(
         var source = await db.SourceMailboxes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (source is null) return new(false, "Source mailbox was not found.");
         ownership.RequireOwner(actor, source.OwnerUserId);
-        source.Enabled = enabled; await db.SaveChangesAsync(cancellationToken); return new(true, "Source mailbox updated.");
+        source.Enabled = enabled; await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync(enabled ? "account.source.enabled" : "account.source.paused", ownership.RequireCurrentUserId(actor), source.OwnerUserId, "sourceMailbox", source.Id.ToString("N"), cancellationToken: cancellationToken);
+        return new(true, "Source mailbox updated.");
     }
 
     public async Task<MailboxOperationResult> SaveSourceFoldersAsync(ClaimsPrincipal actor, Guid id, IReadOnlyList<string>? selectedFolders, CancellationToken cancellationToken = default)
@@ -129,6 +134,7 @@ public sealed class MailboxConfigurationService(
         var ownerId = ownership.RequireCurrentUserId(actor);
         if (string.IsNullOrWhiteSpace(input.Username) || string.IsNullOrWhiteSpace(input.Folder)) return new(false, "Username and destination folder are required.");
         var destination = await db.DestinationMailboxes.SingleOrDefaultAsync(x => x.OwnerUserId == ownerId, cancellationToken);
+        var created = destination is null;
         if (destination is null)
         {
             if (string.IsNullOrWhiteSpace(input.Password)) return new(false, "A password is required for the destination mailbox.");
@@ -137,7 +143,9 @@ public sealed class MailboxConfigurationService(
         destination.Username = input.Username.Trim(); destination.Folder = input.Folder.Trim(); destination.Enabled = input.Enabled;
         if (!string.IsNullOrWhiteSpace(input.Password)) destination.ProtectedCredential = credentials.Protect(input.Password, CredentialKind.DestinationImapPassword);
         _ = localImapOptions.Value; // destination host, port and TLS are exclusively application configuration.
-        await db.SaveChangesAsync(cancellationToken); return new(true, "Destination mailbox saved.");
+        await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync(created ? "credential.destination.created" : "credential.destination.updated", ownerId, ownerId, "destinationMailbox", destination.Id.ToString("N"), cancellationToken: cancellationToken);
+        return new(true, "Destination mailbox saved.");
     }
 
     private static SourceMailboxSummary ToSummary(SourceMailbox source) => new(source.Id, source.DisplayName, source.Host, source.Port, source.UseSsl, source.Username, source.Enabled, DeserializeFolders(source.SelectedFoldersJson), source.PollingStatus, source.LastSuccessfulConnectionUtc, source.SanitizedError);

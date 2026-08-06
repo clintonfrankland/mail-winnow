@@ -1,6 +1,7 @@
 using MailWinnow.Core.Rules;
 using MailWinnow.Infrastructure.Mailboxes;
 using MailWinnow.Infrastructure.Persistence;
+using MailWinnow.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace MailWinnow.Infrastructure.Rules;
@@ -12,7 +13,7 @@ public interface IRuleEvaluationService
 }
 
 /// <summary>Owner-bound evaluation and safe pending-header reevaluation on rule changes.</summary>
-public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDeliveryService? deliveries = null) : IRuleEvaluationService
+public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDeliveryService? deliveries = null, IAuditRecorder? audit = null) : IRuleEvaluationService
 {
     public async Task<RuleEvaluation> EvaluateAsync(string ownerUserId, Guid headerId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
     {
@@ -23,6 +24,7 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDelive
         header.EvaluationOutcome = result.Outcome;
         header.EvaluatedUtc = nowUtc;
         await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync("decision.evaluated", ownerUserId, ownerUserId, "header", headerId.ToString("N"), cancellationToken: cancellationToken);
         if (result.Outcome == RuleOutcome.Allow && deliveries is not null)
             await deliveries.QueueApprovedAsync(ownerUserId, headerId, result.AppliedRule?.Id, cancellationToken);
         return result;
@@ -54,7 +56,7 @@ public interface IRuleManagementService
 }
 
 /// <summary>Writes rules only after validating their scope, temporary dates, and ownership.</summary>
-public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluationService evaluation) : IRuleManagementService
+public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluationService evaluation, IAuditRecorder? audit = null) : IRuleManagementService
 {
     public async Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default)
     {
@@ -64,6 +66,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         var existing = await db.MailRules.SingleOrDefaultAsync(x => x.Id == rule.Id && x.OwnerUserId == rule.OwnerUserId, cancellationToken);
         if (existing is null) db.MailRules.Add(rule); else db.Entry(existing).CurrentValues.SetValues(rule);
         await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync(existing is null ? "rule.created" : "rule.updated", rule.OwnerUserId, rule.OwnerUserId, "rule", rule.Id.ToString("N"), cancellationToken: cancellationToken);
         await ReevaluateOwnedHeadersAsync(rule.OwnerUserId, cancellationToken);
     }
 
@@ -73,6 +76,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
             ?? throw new InvalidOperationException("The rule was not found for this user.");
         db.MailRules.Remove(rule);
         await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync("rule.deleted", ownerUserId, ownerUserId, "rule", ruleId.ToString("N"), cancellationToken: cancellationToken);
         await ReevaluateOwnedHeadersAsync(ownerUserId, cancellationToken);
     }
 
@@ -89,6 +93,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         db.MailRules.Remove(existing);
         db.MailRules.Add(replacement);
         await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync("rule.replaced", ownerUserId, ownerUserId, "rule", replacement.Id.ToString("N"), cancellationToken: cancellationToken);
         await ReevaluateOwnedHeadersAsync(ownerUserId, cancellationToken);
     }
 
@@ -100,6 +105,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         var existing = await db.MessageDecisions.SingleOrDefaultAsync(x => x.OwnerUserId == decision.OwnerUserId && x.SourceMessageHeaderId == decision.SourceMessageHeaderId, cancellationToken);
         if (existing is null) db.MessageDecisions.Add(decision); else db.Entry(existing).CurrentValues.SetValues(decision);
         await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync("decision.created", decision.OwnerUserId, decision.OwnerUserId, "header", decision.SourceMessageHeaderId.ToString("N"), cancellationToken: cancellationToken);
         await evaluation.EvaluateAsync(decision.OwnerUserId, decision.SourceMessageHeaderId, DateTimeOffset.UtcNow, cancellationToken);
     }
 
@@ -109,6 +115,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
             ?? throw new InvalidOperationException("The message decision was not found for this user.");
         db.MessageDecisions.Remove(decision);
         await db.SaveChangesAsync(cancellationToken);
+        if (audit is not null) await audit.RecordAsync("decision.deleted", ownerUserId, ownerUserId, "header", headerId.ToString("N"), cancellationToken: cancellationToken);
         await evaluation.EvaluateAsync(ownerUserId, headerId, DateTimeOffset.UtcNow, cancellationToken);
     }
 

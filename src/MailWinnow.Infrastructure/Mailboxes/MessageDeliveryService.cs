@@ -23,7 +23,8 @@ public sealed class MessageDeliveryService(
     ICredentialProtectionService credentials,
     IImapConnectionService imap,
     IOptions<LocalImapOptions> localImap,
-    IOwnershipAuthorizer ownership) : IMessageDeliveryService
+    IOwnershipAuthorizer ownership,
+    IAuditRecorder? audit = null) : IMessageDeliveryService
 {
     private static readonly TimeSpan InFlightRecoveryAge = TimeSpan.FromMinutes(5);
 
@@ -33,7 +34,10 @@ public sealed class MessageDeliveryService(
         if (header.EvaluationOutcome != RuleOutcome.Allow) return;
         var delivery = await db.MessageDeliveries.SingleOrDefaultAsync(x => x.SourceMessageHeaderId == headerId, cancellationToken);
         if (delivery is null)
+        {
             db.MessageDeliveries.Add(new MessageDelivery { SourceMessageHeaderId = headerId, OwnerUserId = ownerUserId, ApprovalRuleId = approvalRuleId });
+            if (audit is not null) await audit.RecordAsync("delivery.queued", ownerUserId, ownerUserId, "header", headerId.ToString("N"), cancellationToken: cancellationToken);
+        }
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -236,6 +240,7 @@ public sealed class MessageDeliveryService(
         delivery.LastFailureStage = null;
         delivery.SanitizedError = null;
         await db.SaveChangesAsync(token);
+        if (audit is not null) await audit.RecordAsync("delivery.completed", null, delivery.OwnerUserId, "delivery", delivery.Id.ToString("N"), cancellationToken: token);
     }
 
     private async Task<int> RetentionDaysAsync(MessageDelivery delivery, CancellationToken token)
@@ -251,6 +256,7 @@ public sealed class MessageDeliveryService(
         delivery.LastFailureStage = stage;
         delivery.SanitizedError = message.Length <= 512 ? message : "The IMAP operation could not be completed.";
         await db.SaveChangesAsync(token);
+        if (audit is not null) await audit.RecordAsync("delivery.failed", null, delivery.OwnerUserId, "delivery", delivery.Id.ToString("N"), cancellationToken: token);
     }
 
     private async Task CleanupFailedAsync(MessageDelivery delivery, string message, CancellationToken token)

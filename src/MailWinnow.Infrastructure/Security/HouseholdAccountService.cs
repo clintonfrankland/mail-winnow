@@ -14,7 +14,7 @@ public interface IHouseholdAccountService
     Task<ServiceResult> ResetPasswordAsync(ClaimsPrincipal actor, string userId, string newPassword);
 }
 
-public sealed class HouseholdAccountService(UserManager<ApplicationUser> userManager)
+public sealed class HouseholdAccountService(UserManager<ApplicationUser> userManager, IAuditRecorder? audit = null)
     : IHouseholdAccountService
 {
     public async Task<IReadOnlyList<HouseholdAccount>> ListAsync(ClaimsPrincipal actor)
@@ -44,7 +44,9 @@ public sealed class HouseholdAccountService(UserManager<ApplicationUser> userMan
             Email = normalizedEmail,
             EmailConfirmed = true
         };
-        return ToServiceResult(await userManager.CreateAsync(user, password));
+        var result = ToServiceResult(await userManager.CreateAsync(user, password));
+        if (result.Succeeded && audit is not null) await audit.RecordAsync("user.created", actor.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), user.Id, "user", user.Id);
+        return result;
     }
 
     public async Task<ServiceResult> SetEnabledAsync(ClaimsPrincipal actor, string userId, bool enabled)
@@ -63,7 +65,9 @@ public sealed class HouseholdAccountService(UserManager<ApplicationUser> userMan
 
         user.LockoutEnabled = true;
         user.LockoutEnd = enabled ? null : DateTimeOffset.MaxValue;
-        return ToServiceResult(await userManager.UpdateAsync(user));
+        var result = ToServiceResult(await userManager.UpdateAsync(user));
+        if (result.Succeeded && audit is not null) await audit.RecordAsync(enabled ? "user.enabled" : "user.disabled", administrator.Id, user.Id, "user", user.Id);
+        return result;
     }
 
     public async Task<ServiceResult> ResetPasswordAsync(
@@ -79,7 +83,9 @@ public sealed class HouseholdAccountService(UserManager<ApplicationUser> userMan
         }
 
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        return ToServiceResult(await userManager.ResetPasswordAsync(user, token, newPassword));
+        var result = ToServiceResult(await userManager.ResetPasswordAsync(user, token, newPassword));
+        if (result.Succeeded && audit is not null) await audit.RecordAsync("credential.user.reset", actor.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), user.Id, "user", user.Id);
+        return result;
     }
 
     private async Task<ApplicationUser> RequireAdministratorAsync(ClaimsPrincipal actor)

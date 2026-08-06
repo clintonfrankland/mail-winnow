@@ -17,7 +17,8 @@ public interface IFirstRunSetupService
 public sealed class FirstRunSetupService(
     MailWinnowDbContext dbContext,
     UserManager<ApplicationUser> userManager,
-    RoleManager<IdentityRole> roleManager) : IFirstRunSetupService
+    RoleManager<IdentityRole> roleManager,
+    IAuditRecorder? audit = null) : IFirstRunSetupService
 {
     public async Task<bool> IsSetupRequiredAsync(CancellationToken cancellationToken = default) =>
         !await dbContext.Users.AsNoTracking().AnyAsync(cancellationToken);
@@ -69,6 +70,10 @@ public sealed class FirstRunSetupService(
             return ServiceResult.Failure(JoinErrors(roleAssignment));
         }
 
+        if (audit is not null)
+        {
+            await audit.RecordAsync("user.administrator.created", user.Id, user.Id, "user", user.Id, cancellationToken: cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
         return ServiceResult.Success();
     }

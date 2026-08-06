@@ -19,6 +19,14 @@
             <form method="post" action="/admin/operations/mailbox-enabled" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@mailbox.Id" /><input type="hidden" name="Enabled" value="@(!mailbox.Enabled)" /><button class="btn btn-secondary btn-sm" type="submit">@(mailbox.Enabled ? "Pause" : "Enable")</button></form>
         </section>
     }
+    <h2>Failed deliveries</h2>
+    @if (_snapshot.DeliveryFailures.Count == 0) { <p>No failed deliveries.</p> }
+    @foreach (var delivery in _snapshot.DeliveryFailures)
+    {
+        <section class="card p-3 mb-2"><strong>@delivery.Stage failure</strong> · @(delivery.SanitizedError ?? "The delivery failed.")
+            <form method="post" action="/admin/operations/retry-delivery" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@delivery.Id" /><button class="btn btn-secondary btn-sm" type="submit">Retry delivery</button></form>
+        </section>
+    }
     <h2>Recent audit events</h2>
     <ul>@foreach (var audit in _snapshot.AuditEvents) { <li>@audit.OccurredUtc.ToLocalTime().ToString("g") — @audit.EventType (@audit.ResourceType @audit.ResourceId)</li> }</ul>
 }
