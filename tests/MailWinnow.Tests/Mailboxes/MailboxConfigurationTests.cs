@@ -12,6 +12,33 @@ namespace MailWinnow.Tests.Mailboxes;
 public sealed class MailboxConfigurationTests
 {
     [Fact]
+    public void NewSourceRequestAllowsFieldsOmittedByHtmlForms()
+    {
+        var request = new MailboxEndpoints.SourceRequest
+        {
+            DisplayName = "Personal",
+            Host = "imap.example.test",
+            Port = 993,
+            Username = "owner@example.test",
+            Password = "secret"
+        };
+
+        Assert.Null(request.Id);
+        Assert.False(request.UseSsl);
+        Assert.False(request.Enabled);
+        Assert.Null(request.SelectedFolders);
+    }
+
+    [Fact]
+    public void MailboxCheckboxRequestsDefaultToFalseWhenFieldsAreAbsent()
+    {
+        Assert.False(new MailboxEndpoints.SourceEnabledRequest().Enabled);
+        Assert.False(new MailboxEndpoints.SourceTestRequest().DiscoverFolders);
+        Assert.False(new MailboxEndpoints.DestinationRequest().Enabled);
+        Assert.Null(new MailboxEndpoints.SourceFoldersRequest().SelectedFolders);
+    }
+
+    [Fact]
     public async Task SourceAndDestinationAreOwnerScopedAndCredentialsAreNotReturned()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

@@ -45,9 +45,42 @@ public static class MailboxEndpoints
         return "/mailboxes?" + string.Join('&', query);
     }
     private static IReadOnlyList<string> ParseFolders(string? folders) => string.IsNullOrWhiteSpace(folders) ? [] : folders.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    public sealed record SourceRequest(Guid? Id, string DisplayName, string Host, int Port, bool UseSsl, string Username, string? Password, bool Enabled, string? SelectedFolders);
-    public sealed record SourceEnabledRequest(Guid Id, bool Enabled);
-    public sealed record SourceTestRequest(Guid Id, bool DiscoverFolders);
-    public sealed record SourceFoldersRequest(Guid Id, string[]? SelectedFolders);
-    public sealed record DestinationRequest(string Username, string? Password, string Folder, bool Enabled);
+    public sealed class SourceRequest
+    {
+        public Guid? Id { get; init; }
+        public string DisplayName { get; init; } = "";
+        public string Host { get; init; } = "";
+        public int Port { get; init; }
+        public bool UseSsl { get; init; }
+        public string Username { get; init; } = "";
+        public string? Password { get; init; }
+        public bool Enabled { get; init; }
+        public string? SelectedFolders { get; init; }
+    }
+
+    public sealed class SourceEnabledRequest
+    {
+        public Guid Id { get; init; }
+        public bool Enabled { get; init; }
+    }
+
+    public sealed class SourceTestRequest
+    {
+        public Guid Id { get; init; }
+        public bool DiscoverFolders { get; init; }
+    }
+
+    public sealed class SourceFoldersRequest
+    {
+        public Guid Id { get; init; }
+        public string[]? SelectedFolders { get; init; }
+    }
+
+    public sealed class DestinationRequest
+    {
+        public string Username { get; init; } = "";
+        public string? Password { get; init; }
+        public string Folder { get; init; } = "";
+        public bool Enabled { get; init; }
+    }
 }

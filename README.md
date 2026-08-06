@@ -31,6 +31,8 @@ Blazor query-string filters must bind only framework-supported scalar types. For
 
 HTML checkboxes are omitted from form submissions when unchecked. Login form request models must therefore use a property-bound model with `RememberMe` defaulting to `false`; do not make the checkbox a required constructor-bound value. Run `scripts/smoke-login-form.sh <base-url>` after deployment to verify that both unchecked and checked submissions reach the login handler without an HTTP 400 response. The smoke test deliberately uses invalid credentials and never accepts a password argument.
 
+Mailbox forms follow the same property-binding rule. New source-account submissions omit `Id`, unchecked TLS/enabled/discovery fields are absent, and selecting no folders omits `SelectedFolders`. Keep these request models parameterless with safe property defaults so omitted optional fields reach the handler instead of failing model binding. Run `scripts/check-mailbox-form-contract.sh` before deployment; it verifies both the rendered form shape and the property-bound request contract.
+
 ## Application migrations
 
 The application uses EF Core with SQL Server. `MailWinnowDbContext` reads the standard `ConnectionStrings:MailWinnow` configuration value, supplied in deployed environments through the scoped `ConnectionStrings__MailWinnow` variable. No host applies migrations during normal startup.
