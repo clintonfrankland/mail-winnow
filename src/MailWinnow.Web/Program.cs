@@ -43,6 +43,7 @@ app.MapRazorComponents<App>();
 app.MapAccountEndpoints();
 app.MapMailboxEndpoints();
 app.MapReviewEndpoints();
+app.MapAdministrationEndpoints();
 
 app.Run();
 

@@ -1,6 +1,7 @@
 using MailWinnow.Infrastructure.Security;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace MailWinnow.Web.Security;
 
@@ -68,27 +69,30 @@ public static class AccountEndpoints
     private static async Task<IResult> CreateAsync(
         HttpContext context,
         [FromForm] SetupRequest request,
-        IHouseholdAccountService accounts)
+        IHouseholdAccountService accounts, IAdministrationService audit)
     {
         var result = await accounts.CreateAsync(context.User, request.Email, request.Password);
+        if (result.Succeeded) await audit.RecordAsync("user.created", context.User.FindFirstValue(ClaimTypes.NameIdentifier), resourceType: "user");
         return RedirectWithMessage("/admin/household", result.Error);
     }
 
     private static async Task<IResult> SetEnabledAsync(
         HttpContext context,
         [FromForm] EnabledRequest request,
-        IHouseholdAccountService accounts)
+        IHouseholdAccountService accounts, IAdministrationService audit)
     {
         var result = await accounts.SetEnabledAsync(context.User, request.UserId, request.Enabled);
+        if (result.Succeeded) await audit.RecordAsync(request.Enabled ? "user.enabled" : "user.disabled", context.User.FindFirstValue(ClaimTypes.NameIdentifier), request.UserId, "user", request.UserId);
         return RedirectWithMessage("/admin/household", result.Error);
     }
 
     private static async Task<IResult> ResetPasswordAsync(
         HttpContext context,
         [FromForm] PasswordRequest request,
-        IHouseholdAccountService accounts)
+        IHouseholdAccountService accounts, IAdministrationService audit)
     {
         var result = await accounts.ResetPasswordAsync(context.User, request.UserId, request.Password);
+        if (result.Succeeded) await audit.RecordAsync("user.passwordReset", context.User.FindFirstValue(ClaimTypes.NameIdentifier), request.UserId, "user", request.UserId);
         return RedirectWithMessage("/admin/household", result.Error);
     }
 

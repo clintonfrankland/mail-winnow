@@ -20,6 +20,8 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
     public DbSet<MailRule> MailRules => Set<MailRule>();
     public DbSet<MessageDecision> MessageDecisions => Set<MessageDecision>();
     public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -93,5 +95,7 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.HasIndex(x => new { x.OwnerUserId, x.State });
             entity.HasIndex(x => new { x.State, x.ExpiresUtc });
         });
+        builder.Entity<AuditEvent>(entity => { entity.HasKey(x => x.Id); entity.Property(x => x.EventType).HasMaxLength(100).IsRequired(); entity.Property(x => x.ActorUserId).HasMaxLength(450); entity.Property(x => x.SubjectUserId).HasMaxLength(450); entity.Property(x => x.ResourceType).HasMaxLength(64); entity.Property(x => x.ResourceId).HasMaxLength(64); entity.Property(x => x.Detail).HasMaxLength(512); entity.HasIndex(x => x.OccurredUtc); });
+        builder.Entity<WorkerHeartbeat>(entity => { entity.HasKey(x => x.Id); entity.Property(x => x.Status).HasMaxLength(64).IsRequired(); });
     }
 }

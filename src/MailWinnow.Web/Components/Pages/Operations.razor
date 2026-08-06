@@ -1,0 +1,32 @@
+@page "/admin/operations"
+@attribute [Authorize(Policy = AuthConstants.AdministratorPolicy)]
+@inject IAdministrationService Administration
+
+<PageTitle>Operations</PageTitle>
+<h1>Administration and worker health</h1>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger">@Error</div> }
+@if (Saved) { <div class="alert alert-success">Operation queued.</div> }
+@if (_snapshot is not null)
+{
+    <p>Database: @(_snapshot.DatabaseHealthy ? "Healthy" : "Unavailable") · Local IMAP: @_snapshot.LocalImapStatus · Worker heartbeat: @(_snapshot.WorkerLastSeenUtc?.ToLocalTime().ToString("g") ?? "Not yet received")</p>
+    <p>Pending headers: @_snapshot.PendingHeaders · Pending deliveries: @_snapshot.PendingDeliveries · Failed deliveries: @_snapshot.FailedDeliveries · Expiration failures: @_snapshot.ExpirationFailures</p>
+    <h2>Source mailbox synchronization</h2>
+    @foreach (var mailbox in _snapshot.Mailboxes)
+    {
+        <section class="card p-3 mb-2"><strong>@mailbox.DisplayName</strong> · @(mailbox.Enabled ? "Enabled" : "Paused") · @mailbox.Status
+            <div>Last successful sync: @(mailbox.LastSuccessfulSyncUtc?.ToLocalTime().ToString("g") ?? "never") · @mailbox.SanitizedError</div>
+            <form method="post" action="/admin/operations/sync" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@mailbox.Id" /><button class="btn btn-secondary btn-sm" type="submit">Sync</button></form>
+            <form method="post" action="/admin/operations/mailbox-enabled" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@mailbox.Id" /><input type="hidden" name="Enabled" value="@(!mailbox.Enabled)" /><button class="btn btn-secondary btn-sm" type="submit">@(mailbox.Enabled ? "Pause" : "Enable")</button></form>
+        </section>
+    }
+    <h2>Recent audit events</h2>
+    <ul>@foreach (var audit in _snapshot.AuditEvents) { <li>@audit.OccurredUtc.ToLocalTime().ToString("g") — @audit.EventType (@audit.ResourceType @audit.ResourceId)</li> }</ul>
+}
+
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public bool Saved { get; set; }
+    private AdministrationSnapshot? _snapshot;
+    protected override async Task OnInitializedAsync() => _snapshot = await Administration.GetSnapshotAsync(HttpContext.User);
+}

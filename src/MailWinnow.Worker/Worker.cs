@@ -12,6 +12,14 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
             try
             {
                 var ids = await queue.GetDueMailboxIdsAsync(stoppingToken);
+                await using (var heartbeatScope = scopes.CreateAsyncScope())
+                {
+                    var heartbeatDb = heartbeatScope.ServiceProvider.GetRequiredService<MailWinnow.Infrastructure.Persistence.MailWinnowDbContext>();
+                    var heartbeat = await heartbeatDb.WorkerHeartbeats.FindAsync([1], stoppingToken) ?? new MailWinnow.Infrastructure.Security.WorkerHeartbeat { Id = 1 };
+                    if (heartbeatDb.Entry(heartbeat).State == Microsoft.EntityFrameworkCore.EntityState.Detached) heartbeatDb.WorkerHeartbeats.Add(heartbeat);
+                    heartbeat.LastSeenUtc = DateTimeOffset.UtcNow; heartbeat.Status = "Running";
+                    await heartbeatDb.SaveChangesAsync(stoppingToken);
+                }
                 var maximumConcurrency = Math.Clamp(options.Value.MaximumConcurrency, 1, 32);
                 await Parallel.ForEachAsync(ids, new ParallelOptions { MaxDegreeOfParallelism = maximumConcurrency, CancellationToken = stoppingToken }, async (id, token) =>
                 {
