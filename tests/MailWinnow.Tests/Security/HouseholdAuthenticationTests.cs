@@ -7,11 +7,37 @@ using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using MailWinnow.Web.Security;
 
 namespace MailWinnow.Tests.Security;
 
 public sealed class HouseholdAuthenticationTests
 {
+    [Fact]
+    public void LoginRequestDefaultsRememberMeToFalseWhenCheckboxFieldIsAbsent()
+    {
+        var request = new AccountEndpoints.LoginRequest
+        {
+            Email = "admin@example.test",
+            Password = "ValidPassword1"
+        };
+
+        Assert.False(request.RememberMe);
+    }
+
+    [Fact]
+    public void LoginRequestAcceptsCheckedRememberMeValue()
+    {
+        var request = new AccountEndpoints.LoginRequest
+        {
+            Email = "admin@example.test",
+            Password = "ValidPassword1",
+            RememberMe = true
+        };
+
+        Assert.True(request.RememberMe);
+    }
+
     [Fact]
     public async Task FirstRunCreatesOnlyFirstAdministratorAndAuthenticatesPassword()
     {

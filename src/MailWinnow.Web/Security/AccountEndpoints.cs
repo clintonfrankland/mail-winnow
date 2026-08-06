@@ -105,7 +105,12 @@ public static class AccountEndpoints
     }
 
     public sealed record SetupRequest(string Email, string Password);
-    public sealed record LoginRequest(string Email, string Password, bool RememberMe = false);
+    public sealed class LoginRequest
+    {
+        public string Email { get; init; } = string.Empty;
+        public string Password { get; init; } = string.Empty;
+        public bool RememberMe { get; init; }
+    }
     public sealed record EnabledRequest(string UserId, bool Enabled);
     public sealed record PasswordRequest(string UserId, string Password);
 }

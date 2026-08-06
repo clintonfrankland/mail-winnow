@@ -29,6 +29,8 @@ dotnet test MailWinnow.sln --no-build
 
 Blazor query-string filters must bind only framework-supported scalar types. For enum filters, bind the raw query value as `string`, parse it explicitly with `Enum.TryParse`, and treat missing or invalid values as an unfiltered request. Keep regression coverage for missing, valid, case-insensitive, and invalid values so a filter cannot prevent its page from rendering.
 
+HTML checkboxes are omitted from form submissions when unchecked. Login form request models must therefore use a property-bound model with `RememberMe` defaulting to `false`; do not make the checkbox a required constructor-bound value. Run `scripts/smoke-login-form.sh <base-url>` after deployment to verify that both unchecked and checked submissions reach the login handler without an HTTP 400 response. The smoke test deliberately uses invalid credentials and never accepts a password argument.
+
 ## Application migrations
 
 The application uses EF Core with SQL Server. `MailWinnowDbContext` reads the standard `ConnectionStrings:MailWinnow` configuration value, supplied in deployed environments through the scoped `ConnectionStrings__MailWinnow` variable. No host applies migrations during normal startup.
