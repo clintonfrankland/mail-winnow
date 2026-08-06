@@ -8,10 +8,30 @@ check_submission() {
   local label="$1"
   shift
 
+  local work_dir
+  work_dir="$(mktemp -d)"
+  local cookie_jar="$work_dir/cookies"
+  local login_page="$work_dir/login.html"
+  trap 'rm -rf -- "$work_dir"' RETURN
+
+  curl --silent --show-error \
+    --cookie-jar "$cookie_jar" \
+    --output "$login_page" \
+    "${base_url%/}/login"
+
+  local antiforgery_token
+  antiforgery_token="$(sed -n 's/.*name="__RequestVerificationToken" value="\([^"]*\)".*/\1/p' "$login_page" | head -n 1)"
+  if [[ -z "$antiforgery_token" ]]; then
+    echo "$label login form smoke failed: anti-forgery token missing" >&2
+    return 1
+  fi
+
   local headers
   headers="$(curl --silent --show-error --output /dev/null --dump-header - \
     --request POST \
+    --cookie "$cookie_jar" \
     --header 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode "__RequestVerificationToken=$antiforgery_token" \
     --data-urlencode 'Email=login-smoke-invalid@example.test' \
     --data-urlencode 'Password=IntentionallyInvalidPassword1' \
     "$@" \
