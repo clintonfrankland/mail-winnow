@@ -20,13 +20,13 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("aria-label=\"Review view\"", source);
         Assert.Contains("role=\"alert\"", source);
         Assert.Contains("role=\"status\"", source);
-        Assert.Contains("Approve these messages", source);
-        Assert.Contains("Allow from address @item.Sender", source);
-        Assert.Contains("Allow from domain @domain", source);
+        Assert.DoesNotContain("Approve this message", source);
+        Assert.DoesNotContain("Approve these messages", source);
+        Assert.Contains("Allow sender @item.Sender", source);
+        Assert.Contains("Allow domain @domain", source);
         Assert.Contains("Block sender @item.Sender", source);
         Assert.Contains("Block domain @blockedDomain", source);
         Assert.Contains("@rendermode InteractiveServer", source);
-        Assert.Contains("@onclick=\"() => ApproveAsync(group.MessageIds)\"", source);
         Assert.Contains("@onclick=\"() => BlockAsync(item.Sender, RuleMatchType.ExactSender)\"", source);
         Assert.Contains("@onclick='() => SwitchViewAsync(\"sender\")'", source);
         Assert.Contains("private async Task SwitchViewAsync(string view) { View = view; await ReloadAsync(); }", source);
