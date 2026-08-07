@@ -17,7 +17,7 @@ public interface IMessageDeliveryService
     Task<MailboxOperationResult> RetryAsync(ClaimsPrincipal actor, Guid deliveryId, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Transfers MIME content only in process memory. The delivery row is the idempotency record.</summary>
+/// <summary>Moves MIME content through process memory. The delivery row is the append and source-deletion idempotency record.</summary>
 public sealed class MessageDeliveryService(
     MailWinnowDbContext db,
     ICredentialProtectionService credentials,
@@ -123,11 +123,12 @@ public sealed class MessageDeliveryService(
         var current = await db.MessageDeliveries.AsNoTracking().SingleOrDefaultAsync(x => x.Id == deliveryId, cancellationToken);
         if (current is null || current.State is MessageDeliveryState.Delivered or MessageDeliveryState.Deleted or MessageDeliveryState.Expired) return;
 
-        // A persisted append receipt is finalizable without touching the source or destination again.
+        // A persisted append receipt prevents a second destination copy. Recovery still
+        // completes the source deletion before declaring the move delivered.
         if (current.DestinationUid is not null && current.DestinationUidValidity is not null)
         {
             var receiptDelivery = await db.MessageDeliveries.SingleAsync(x => x.Id == deliveryId, cancellationToken);
-            await CompleteAsync(receiptDelivery, cancellationToken);
+            await DeleteSourceAndCompleteAsync(receiptDelivery, cancellationToken);
             return;
         }
 
@@ -174,7 +175,8 @@ public sealed class MessageDeliveryService(
             if (matches.Length == 1)
             {
                 delivery.DestinationUid = matches[0];
-                await CompleteAsync(delivery, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+                await DeleteSourceAndCompleteAsync(delivery, cancellationToken);
                 return;
             }
             await FailAsync(delivery, "Delivery", "The ambiguous destination append could not be safely matched to the original message.", cancellationToken);
@@ -204,7 +206,7 @@ public sealed class MessageDeliveryService(
         // Persist the receipt immediately; a later crash resumes by completing this row rather than appending again.
         delivery.DestinationUid = appended.Value;
         await db.SaveChangesAsync(cancellationToken);
-        await CompleteAsync(delivery, cancellationToken);
+        await DeleteSourceAndCompleteAsync(delivery, cancellationToken);
     }
 
     private async Task<bool> TryClaimAsync(MessageDelivery current, CancellationToken token)
@@ -235,7 +237,8 @@ public sealed class MessageDeliveryService(
     {
         if (delivery.State == MessageDeliveryState.Delivered) return;
         delivery.DeliveredUtc ??= DateTimeOffset.UtcNow;
-        delivery.ExpiresUtc ??= delivery.DeliveredUtc.Value.AddDays(await RetentionDaysAsync(delivery, token));
+        var retentionDays = await RetentionDaysAsync(delivery, token);
+        delivery.ExpiresUtc = retentionDays is { } days ? delivery.DeliveredUtc.Value.AddDays(days) : null;
         delivery.State = MessageDeliveryState.Delivered;
         delivery.LastFailureStage = null;
         delivery.SanitizedError = null;
@@ -243,11 +246,32 @@ public sealed class MessageDeliveryService(
         if (audit is not null) await audit.RecordAsync("delivery.completed", null, delivery.OwnerUserId, "delivery", delivery.Id.ToString("N"), cancellationToken: token);
     }
 
-    private async Task<int> RetentionDaysAsync(MessageDelivery delivery, CancellationToken token)
+    private async Task<int?> RetentionDaysAsync(MessageDelivery delivery, CancellationToken token)
     {
-        if (delivery.ApprovalRuleId is null) return Rules.MailRule.DefaultDeliveredMessageRetentionDays;
+        if (delivery.ApprovalRuleId is null) return null;
         var rule = await db.MailRules.SingleOrDefaultAsync(x => x.Id == delivery.ApprovalRuleId && x.OwnerUserId == delivery.OwnerUserId, token);
-        return Math.Max(0, rule?.DeliveredMessageRetentionDays ?? Rules.MailRule.DefaultDeliveredMessageRetentionDays);
+        return rule?.DeliveredMessageRetentionDays is { } days ? Math.Max(0, days) : null;
+    }
+
+    private async Task DeleteSourceAndCompleteAsync(MessageDelivery delivery, CancellationToken token)
+    {
+        if (delivery.SourceDeletedUtc is null)
+        {
+            var header = await OwnedHeaderAsync(delivery.OwnerUserId, delivery.SourceMessageHeaderId, token);
+            var source = await db.SourceMailboxes.SingleAsync(x => x.Id == header.SourceMailboxId, token);
+            var sourceConnection = new ImapConnectionSettings(source.Host, source.Port, source.UseSsl, source.Username,
+                credentials.Unprotect(source.ProtectedCredential, CredentialKind.SourceImapPassword));
+            var deleted = await imap.DeleteAndExpungeAsync(sourceConnection, header.FolderName, [header.Uid], header.UidValidity, token);
+            if (!deleted.Succeeded)
+            {
+                await FailAsync(delivery, "Source deletion", deleted.Error ?? "The source message could not be deleted after destination delivery.", token);
+                return;
+            }
+            delivery.SourceDeletedUtc = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(token);
+            if (audit is not null) await audit.RecordAsync("source.deleted", null, delivery.OwnerUserId, "header", header.Id.ToString("N"), cancellationToken: token);
+        }
+        await CompleteAsync(delivery, token);
     }
 
     private async Task FailAsync(MessageDelivery delivery, string stage, string message, CancellationToken token)

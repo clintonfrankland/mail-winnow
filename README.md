@@ -91,7 +91,9 @@ LocalImap__UseSsl=true
 LocalImap__AllowInvalidCertificate=false
 ```
 
-`MailSync__PollingIntervalSeconds`, `MailSync__BatchSize`, and `MailSync__MaximumConcurrency` control Worker scheduling. Destination mailbox passwords are stored per household user through the application's encrypted credential store. They do not belong in the shared runtime env file. Delivery uses IMAP APPEND; this deployment adds no SMTP service.
+`MailSync__PollingIntervalSeconds`, `MailSync__BatchSize`, and `MailSync__MaximumConcurrency` control Worker scheduling. Destination mailbox passwords are stored per household user through the application's encrypted credential store. They do not belong in the shared runtime env file. Delivery uses IMAP APPEND and becomes a move only after the append has a durable destination UID: Mail Winnow then deletes and UID-expunges that exact source UID under the cataloged UIDVALIDITY. A source-deletion failure is retryable without appending another destination copy. This deployment adds no SMTP service.
+
+Allow rules default to keeping the moved destination message forever. The review UI also offers destination retention of 30 days (shown as 1 month), 7 days, 3 days, or 1 day. One-message approvals use the Forever default. Retention never authorizes deleting the source before the destination append is confirmed.
 
 Build and start an environment from its Home Helm-managed env file without printing its contents:
 

@@ -135,6 +135,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         if (rule.Scope == RuleScope.User && rule.SourceMailboxId is not null) throw new ArgumentException("User-scoped rules cannot target a source mailbox.", nameof(rule));
         if (rule.Action == RuleAction.TemporarilyAllow && (!rule.EffectiveUtc.HasValue || !rule.ExpiresUtc.HasValue || rule.EffectiveUtc >= rule.ExpiresUtc)) throw new ArgumentException("Temporary allows require an effective time before their expiration.", nameof(rule));
         if (rule.Action != RuleAction.TemporarilyAllow && (rule.EffectiveUtc.HasValue || rule.ExpiresUtc.HasValue)) throw new ArgumentException("Effective and expiration dates are only valid for temporary allows.", nameof(rule));
-        if (rule.DeliveredMessageRetentionDays is < 0) throw new ArgumentException("Retention days cannot be negative.", nameof(rule));
+        if (rule.DeliveredMessageRetentionDays is { } days && days is not (30 or 7 or 3 or 1))
+            throw new ArgumentException("Destination retention must be Forever, 1 month, 1 week, 3 days, or 1 day.", nameof(rule));
     }
 }

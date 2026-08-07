@@ -61,7 +61,7 @@ public sealed class DestinationMailbox
     public bool Enabled { get; set; } = true;
 }
 
-/// <summary>Durable state for the one permitted copy of an approved source message. No MIME content is stored here.</summary>
+/// <summary>Durable state for moving one approved source message to its destination. No MIME content is stored here.</summary>
 public sealed class MessageDelivery
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -80,6 +80,7 @@ public sealed class MessageDelivery
     public DateTimeOffset? FetchStartedUtc { get; set; }
     public DateTimeOffset? DeliveryStartedUtc { get; set; }
     public DateTimeOffset? DestinationAppendStartedUtc { get; set; }
+    public DateTimeOffset? SourceDeletedUtc { get; set; }
     public DateTimeOffset? DeliveredUtc { get; set; }
     public DateTimeOffset? ExpiresUtc { get; set; }
     public DateTimeOffset? DeletionStartedUtc { get; set; }

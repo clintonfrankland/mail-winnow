@@ -62,8 +62,6 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.HasKey(x => x.Id);
             entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
             entity.Property(x => x.MatchValue).HasMaxLength(2000).IsRequired();
-            entity.Property(x => x.DeliveredMessageRetentionDays)
-                .HasDefaultValue(MailRule.DefaultDeliveredMessageRetentionDays);
             entity.HasIndex(x => new { x.OwnerUserId, x.Scope, x.SourceMailboxId });
         });
         builder.Entity<MessageDecision>(entity =>

@@ -73,7 +73,22 @@ public sealed class RuleEvaluationServiceTests
 
         var stored = await fixture.Db.MailRules.FindAsync(rule.Id);
         Assert.NotNull(stored);
-        Assert.Equal(MailRule.DefaultDeliveredMessageRetentionDays, stored.DeliveredMessageRetentionDays);
+        Assert.Null(stored.DeliveredMessageRetentionDays);
+    }
+
+    [Fact]
+    public async Task AddOrUpdate_RejectsUnsupportedDestinationRetention()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var service = new RuleManagementService(fixture.Db, new RuleEvaluationService(fixture.Db));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.AddOrUpdateAsync(new MailRule
+        {
+            OwnerUserId = "owner", Action = RuleAction.PermanentlyAllow, Scope = RuleScope.User,
+            MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test", DeliveredMessageRetentionDays = 2
+        }));
+
+        Assert.Contains("Destination retention", exception.Message);
     }
 
     [Fact]

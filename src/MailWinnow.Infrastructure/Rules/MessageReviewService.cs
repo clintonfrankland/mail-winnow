@@ -12,7 +12,7 @@ public sealed record MessageReviewItem(Guid Id, string Sender, string Subject, s
     string SourceStatus, RuleOutcome Outcome, string DeliveryStatus, string RuleContext, string RetentionContext, Guid? DeliveryId = null);
 public sealed record MessageReviewGroup(string Value, int Count, DateTimeOffset MostRecentUtc, IReadOnlyList<Guid> MessageIds,
     IReadOnlyList<string> Senders, IReadOnlyList<string> Samples, IReadOnlyList<string> RuleContexts);
-public sealed record ReviewRule(Guid Id, RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays);
+public sealed record ReviewRule(Guid Id, RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int? RetentionDays);
 
 public interface IMessageReviewService
 {
@@ -74,7 +74,9 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
         var applied = evaluation.AppliedRule is null ? null : rules.Single(x => x.Id == evaluation.AppliedRule.Id);
         var ruleContext = decision is not null ? "One-message approval" : applied is null ? "No matching reusable rule" : $"{applied.Action} via {applied.MatchType}";
         if (applied?.ExpiresUtc is { } expiry) ruleContext += $"; rule expires {expiry:u}";
-        var retention = applied is null ? "Delivered-copy deletion: no rule retention policy" : $"Delivered-copy deletion: {applied.DeliveredMessageRetentionDays} days after local delivery";
+        var retention = applied?.DeliveredMessageRetentionDays is { } days
+            ? $"Destination retention: {days} days"
+            : "Destination retention: forever";
         var deliveryStatus = delivery is null ? evaluation.Outcome switch { RuleOutcome.Allow => "Eligible for local delivery", RuleOutcome.Block => "Withheld from local delivery", _ => "Awaiting review; not locally delivered" } :
             delivery.State == MessageDeliveryState.Failed ? $"Failed during {delivery.LastFailureStage}; retry available" : delivery.State.ToString();
         return new(header.Id, header.From ?? "(unknown sender)", header.Subject ?? "(no subject)", source.DisplayName, header.ReceivedUtc,

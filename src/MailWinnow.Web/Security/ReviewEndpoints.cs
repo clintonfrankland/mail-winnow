@@ -74,7 +74,7 @@ public static class ReviewEndpoints
         catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
     }
     private static IResult Redirect(string message, bool error = false) => Results.LocalRedirect("/review?" + (error ? "error=" : "saved=") + Uri.EscapeDataString(message));
-    public sealed record RuleRequest(RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays = MailRule.DefaultDeliveredMessageRetentionDays, Guid? ReplaceRuleId = null);
+    public sealed record RuleRequest(RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int? RetentionDays = null, Guid? ReplaceRuleId = null);
     public sealed record RuleIdRequest(Guid Id);
     public sealed record HeaderRequest(Guid Id);
     public sealed class HeaderBatchRequest { public List<Guid> Ids { get; set; } = []; }

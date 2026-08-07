@@ -14,8 +14,13 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("aria-label=\"Review view\"", source);
         Assert.Contains("role=\"alert\"", source);
         Assert.Contains("role=\"status\"", source);
-        Assert.Contains("<label for=\"retention-@rule.Id\">", source);
+        Assert.Contains("<label for=\"retention-@rule.Id\">Destination retention</label>", source);
         Assert.Contains("<label for=\"domain-rule\">", source);
+        Assert.Contains("<option value=\"\">Forever</option>", source);
+        Assert.Contains("<option value=\"30\">1 month</option>", source);
+        Assert.Contains("<option value=\"7\">1 week</option>", source);
+        Assert.Contains("<option value=\"3\">3 days</option>", source);
+        Assert.Contains("<option value=\"1\">1 day</option>", source);
         Assert.Contains("Approve these messages", source);
         Assert.Contains("Allow from address @item.Sender", source);
         Assert.Contains("Allow from domain @domain", source);
