@@ -3,6 +3,15 @@ namespace MailWinnow.Tests.Review;
 public sealed class ReviewDashboardAccessibilityTests
 {
     [Fact]
+    public void WebHostRegistersInteractiveServerComponents()
+    {
+        var source = File.ReadAllText(FindPage(Path.Combine("..", "..", "Program.cs")));
+
+        Assert.Contains("AddInteractiveServerComponents()", source);
+        Assert.Contains("AddInteractiveServerRenderMode()", source);
+    }
+
+    [Fact]
     public void DashboardProvidesAccessibleFiltersActionsAndAnnouncements()
     {
         var source = File.ReadAllText(FindReviewPage());
@@ -16,7 +25,11 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("Allow from domain @domain", source);
         Assert.Contains("Block sender @item.Sender", source);
         Assert.Contains("Block domain @blockedDomain", source);
-        Assert.Contains("action=\"/review/messages/approve\"", source);
+        Assert.Contains("@rendermode InteractiveServer", source);
+        Assert.Contains("@onclick=\"() => ApproveAsync(group.MessageIds)\"", source);
+        Assert.Contains("@onclick=\"() => BlockAsync(item.Sender, RuleMatchType.ExactSender)\"", source);
+        Assert.Contains("await ReloadAsync();", source);
+        Assert.DoesNotContain("action=\"/review/messages/approve\"", source);
         Assert.Contains("href=\"/rules\">Manage rules", source);
         Assert.DoesNotContain("name=\"outcome\"", source);
         Assert.Contains("RuleOutcome.Pending", source);

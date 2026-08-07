@@ -1,7 +1,10 @@
 @page "/review"
 @attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
 @inject IMessageReviewService ReviewService
 @inject IMailboxConfigurationService MailboxService
+@inject IRuleManagementService RuleManagementService
 
 <PageTitle>Message review</PageTitle>
 <header class="page-heading"><div class="eyebrow">Decision center</div><h1>Message review</h1><p>Review recent mail and turn one-time decisions into reusable household rules.</p></header>
@@ -23,13 +26,11 @@
     @foreach (var item in _recent)
     {
         <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender · @item.Account · @item.ReceivedUtc.ToString("u")</div></div><span class="pill">@item.Outcome</span></div><div class="review-facts"><div><strong>Source</strong>@item.SourceStatus</div><div><strong>Local delivery</strong>@item.DeliveryStatus</div><div><strong>Rule</strong>@item.RuleContext</div><div><strong>Retention</strong>@item.RetentionContext</div></div><div class="decision-actions">
-            <form method="post" action="/review/message/approve" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@item.Id" /><button class="btn btn-sm btn-success mt-2">Approve this message</button></form>
-            <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@item.Sender" /><input type="hidden" name="MatchType" value="ExactSender" /><select name="RetentionDays" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button name="Action" value="PermanentlyAllow" class="btn btn-sm btn-outline-success mt-2">Allow from address @item.Sender</button></form>
-            <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@item.Sender" /><input type="hidden" name="MatchType" value="ExactSender" /><button name="Action" value="PermanentlyBlock" class="btn btn-sm btn-outline-danger mt-2">Block sender @item.Sender</button></form>
-            @if (SenderDomain(item.Sender) is { } domain) { <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@domain" /><input type="hidden" name="MatchType" value="SenderDomain" /><select name="RetentionDays" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button name="Action" value="PermanentlyAllow" class="btn btn-sm btn-outline-success mt-2">Allow from domain @domain</button></form> }
-            @if (SenderDomain(item.Sender) is { } blockedDomain) { <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@blockedDomain" /><input type="hidden" name="MatchType" value="SenderDomain" /><button name="Action" value="PermanentlyBlock" class="btn btn-sm btn-outline-danger mt-2">Block domain @blockedDomain</button></form> }
-            <form method="post" action="/review/message/undo" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@item.Id" /><button class="btn btn-sm btn-outline-secondary mt-2">Undo one-message decision</button></form>
-            @if (item.DeliveryId is { } deliveryId && item.DeliveryStatus.StartsWith("Failed", StringComparison.Ordinal)) { <form method="post" action="/review/delivery/retry" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@deliveryId" /><button class="btn btn-sm btn-outline-warning mt-2">Retry delivery</button></form> }
+            <button type="button" class="btn btn-sm btn-success mt-2" @onclick="() => ApproveAsync([item.Id])">Approve this message</button>
+            <select value="@RetentionValue(AddressKey(item.Id))" @onchange="e => SetRetention(AddressKey(item.Id), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(item.Sender, RuleMatchType.ExactSender, AddressKey(item.Id))">Allow from address @item.Sender</button>
+            <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(item.Sender, RuleMatchType.ExactSender)">Block sender @item.Sender</button>
+            @if (SenderDomain(item.Sender) is { } domain) { <select value="@RetentionValue(DomainKey(item.Id))" @onchange="e => SetRetention(DomainKey(item.Id), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, DomainKey(item.Id))">Allow from domain @domain</button> }
+            @if (SenderDomain(item.Sender) is { } blockedDomain) { <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(blockedDomain, RuleMatchType.SenderDomain)">Block domain @blockedDomain</button> }
         </div>
         </article>
     }
@@ -38,12 +39,12 @@ else
 {
     var groups = View == "sender" ? _senders : _subjects;
     @foreach (var group in groups) { <article class="card review-card mb-2"><div class="review-card-header"><h2 class="h5">@group.Value</h2><span class="pill">@group.Count messages</span></div><div class="review-meta">Newest @group.MostRecentUtc.ToString("u")</div><div class="review-facts"><div><strong>Samples</strong>@string.Join("; ", group.Samples)</div><div><strong>Matching context</strong>@string.Join("; ", group.RuleContexts)</div></div><div class="decision-actions">
-        <form method="post" action="/review/messages/approve" class="d-inline"><AntiforgeryToken />@foreach (var id in group.MessageIds) { <input type="hidden" name="Ids" value="@id" /> }<button class="btn btn-sm btn-success mt-2">Approve these messages</button></form>
+        <button type="button" class="btn btn-sm btn-success mt-2" @onclick="() => ApproveAsync(group.MessageIds)">Approve these messages</button>
         @foreach (var sender in group.Senders) {
-            <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@sender" /><input type="hidden" name="MatchType" value="ExactSender" /><select name="RetentionDays" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button name="Action" value="PermanentlyAllow" class="btn btn-sm btn-outline-success mt-2">Allow from address @sender</button></form>
-            <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@sender" /><input type="hidden" name="MatchType" value="ExactSender" /><button name="Action" value="PermanentlyBlock" class="btn btn-sm btn-outline-danger mt-2">Block sender @sender</button></form>
-            @if (SenderDomain(sender) is { } domain) { <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@domain" /><input type="hidden" name="MatchType" value="SenderDomain" /><select name="RetentionDays" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button name="Action" value="PermanentlyAllow" class="btn btn-sm btn-outline-success mt-2">Allow from domain @domain</button></form> }
-            @if (SenderDomain(sender) is { } blockedDomain) { <form method="post" action="/review/rule" class="d-inline"><AntiforgeryToken /><input type="hidden" name="MatchValue" value="@blockedDomain" /><input type="hidden" name="MatchType" value="SenderDomain" /><button name="Action" value="PermanentlyBlock" class="btn btn-sm btn-outline-danger mt-2">Block domain @blockedDomain</button></form> }
+            <select value="@RetentionValue(GroupAddressKey(group.Value, sender))" @onchange="e => SetRetention(GroupAddressKey(group.Value, sender), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(sender, RuleMatchType.ExactSender, GroupAddressKey(group.Value, sender))">Allow from address @sender</button>
+            <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(sender, RuleMatchType.ExactSender)">Block sender @sender</button>
+            @if (SenderDomain(sender) is { } domain) { <select value="@RetentionValue(GroupDomainKey(group.Value, sender))" @onchange="e => SetRetention(GroupDomainKey(group.Value, sender), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, GroupDomainKey(group.Value, sender))">Allow from domain @domain</button> }
+            @if (SenderDomain(sender) is { } blockedDomain) { <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(blockedDomain, RuleMatchType.SenderDomain)">Block domain @blockedDomain</button> }
         }
     </div></article> }
 }
@@ -51,7 +52,7 @@ else
 <section class="card section-card mt-3"><div class="section-header"><div><h2>Reusable rules</h2><p class="text-body-secondary mb-0">View, create, edit, or remove automatic decisions on the Rules page.</p></div><a class="btn btn-outline-primary" href="/rules">Manage rules</a></div></section>
 
 @code {
-    [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
+    [CascadingParameter] public Task<AuthenticationState> AuthenticationStateTask { get; set; } = null!;
     [SupplyParameterFromQuery] public string? View { get; set; }
     [SupplyParameterFromQuery] public Guid? SourceMailboxId { get; set; }
     [SupplyParameterFromQuery] public string? Search { get; set; }
@@ -61,7 +62,45 @@ else
     private IReadOnlyList<MessageReviewItem> _recent = [];
     private IReadOnlyList<MessageReviewGroup> _senders = [];
     private IReadOnlyList<MessageReviewGroup> _subjects = [];
-    protected override async Task OnInitializedAsync() { View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(HttpContext.User); _recent = await ReviewService.GetRecentAsync(HttpContext.User, filter); if (View == "sender") _senders = await ReviewService.GetBySenderAsync(HttpContext.User, filter); if (View == "subject") _subjects = await ReviewService.GetBySubjectAsync(HttpContext.User, filter); }
+    private readonly Dictionary<string, int?> _retention = [];
+    private ClaimsPrincipal User { get; set; } = null!;
+    protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; await ReloadAsync(); }
+    private async Task ReloadAsync() { var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(User); _recent = await ReviewService.GetRecentAsync(User, filter); _senders = View == "sender" ? await ReviewService.GetBySenderAsync(User, filter) : []; _subjects = View == "subject" ? await ReviewService.GetBySubjectAsync(User, filter) : []; }
+    private async Task BlockAsync(string matchValue, RuleMatchType matchType)
+    {
+        Error = null;
+        try
+        {
+            var owner = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("The signed-in user could not be identified.");
+            await RuleManagementService.AddOrUpdateAsync(new MailRule { OwnerUserId = owner, Action = RuleAction.PermanentlyBlock, Scope = RuleScope.User, MatchType = matchType, MatchValue = matchValue.Trim() });
+            Saved = matchType == RuleMatchType.ExactSender ? $"Blocked sender {matchValue}." : $"Blocked domain {matchValue}.";
+            await ReloadAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Error = ex.Message; }
+    }
+    private async Task AllowAsync(string matchValue, RuleMatchType matchType, string retentionKey) => await ApplyAsync(async owner =>
+    {
+        await RuleManagementService.AddOrUpdateAsync(new MailRule { OwnerUserId = owner, Action = RuleAction.PermanentlyAllow, Scope = RuleScope.User, MatchType = matchType, MatchValue = matchValue.Trim(), DeliveredMessageRetentionDays = _retention.GetValueOrDefault(retentionKey) });
+        Saved = matchType == RuleMatchType.ExactSender ? $"Allowed sender {matchValue}." : $"Allowed domain {matchValue}.";
+    });
+    private async Task ApproveAsync(IEnumerable<Guid> ids) => await ApplyAsync(async owner =>
+    {
+        var distinctIds = ids.Distinct().ToList();
+        foreach (var id in distinctIds) await RuleManagementService.SetMessageDecisionAsync(new MessageDecision { OwnerUserId = owner, SourceMessageHeaderId = id, Action = RuleAction.ApproveOneMessage });
+        Saved = distinctIds.Count == 1 ? "Message approved." : $"Approved {distinctIds.Count} messages.";
+    });
+    private async Task ApplyAsync(Func<string, Task> action)
+    {
+        Error = null;
+        try { var owner = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("The signed-in user could not be identified."); await action(owner); await ReloadAsync(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Error = ex.Message; }
+    }
+    private string RetentionValue(string key) => _retention.GetValueOrDefault(key)?.ToString() ?? string.Empty;
+    private void SetRetention(string key, string? value) => _retention[key] = int.TryParse(value, out var days) ? days : null;
+    private static string AddressKey(Guid id) => $"address:{id:N}";
+    private static string DomainKey(Guid id) => $"domain:{id:N}";
+    private static string GroupAddressKey(string group, string sender) => $"group-address:{group}:{sender}";
+    private static string GroupDomainKey(string group, string sender) => $"group-domain:{group}:{sender}";
     private string Link(string view) => $"/review?view={view}&sourceMailboxId={SourceMailboxId}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
     private static string? SenderDomain(string sender) { var at = sender.LastIndexOf('@'); return at > 0 && at < sender.Length - 1 ? sender[(at + 1)..] : null; }
 }
