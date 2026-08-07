@@ -14,6 +14,7 @@ public static class ReviewEndpoints
         group.MapPost("/rule", AddRuleAsync);
         group.MapPost("/rule/delete", DeleteRuleAsync);
         group.MapPost("/message/approve", ApproveAsync);
+        group.MapPost("/messages/approve", ApproveManyAsync);
         group.MapPost("/message/undo", UndoAsync);
         group.MapPost("/delivery/retry", RetryDeliveryAsync);
         return endpoints;
@@ -46,6 +47,18 @@ public static class ReviewEndpoints
         try { await rules.SetMessageDecisionAsync(new MessageDecision { OwnerUserId = ownership.RequireCurrentUserId(context.User), SourceMessageHeaderId = request.Id, Action = RuleAction.ApproveOneMessage }, ct); return Redirect("One-message approval applied."); }
         catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
     }
+    private static async Task<IResult> ApproveManyAsync(HttpContext context, [FromForm] HeaderBatchRequest request, IRuleManagementService rules, IOwnershipAuthorizer ownership, CancellationToken ct)
+    {
+        try
+        {
+            if (request.Ids.Count == 0) throw new InvalidOperationException("No messages were selected.");
+            var owner = ownership.RequireCurrentUserId(context.User);
+            foreach (var id in request.Ids.Distinct())
+                await rules.SetMessageDecisionAsync(new MessageDecision { OwnerUserId = owner, SourceMessageHeaderId = id, Action = RuleAction.ApproveOneMessage }, ct);
+            return Redirect($"Approved {request.Ids.Distinct().Count()} messages.");
+        }
+        catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
+    }
     private static async Task<IResult> UndoAsync(HttpContext context, [FromForm] HeaderRequest request, IRuleManagementService rules, IOwnershipAuthorizer ownership, CancellationToken ct)
     {
         try { await rules.DeleteMessageDecisionAsync(ownership.RequireCurrentUserId(context.User), request.Id, ct); return Redirect("One-message decision undone."); }
@@ -64,5 +77,6 @@ public static class ReviewEndpoints
     public sealed record RuleRequest(RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays = MailRule.DefaultDeliveredMessageRetentionDays, Guid? ReplaceRuleId = null);
     public sealed record RuleIdRequest(Guid Id);
     public sealed record HeaderRequest(Guid Id);
+    public sealed class HeaderBatchRequest { public List<Guid> Ids { get; set; } = []; }
     public sealed record DeliveryRequest(Guid Id);
 }

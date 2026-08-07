@@ -10,7 +10,8 @@ namespace MailWinnow.Infrastructure.Rules;
 public sealed record MessageReviewFilter(Guid? SourceMailboxId, RuleOutcome? Outcome, string? Search);
 public sealed record MessageReviewItem(Guid Id, string Sender, string Subject, string Account, DateTimeOffset ReceivedUtc,
     string SourceStatus, RuleOutcome Outcome, string DeliveryStatus, string RuleContext, string RetentionContext, Guid? DeliveryId = null);
-public sealed record MessageReviewGroup(string Value, int Count, DateTimeOffset MostRecentUtc, IReadOnlyList<string> Samples, IReadOnlyList<string> RuleContexts);
+public sealed record MessageReviewGroup(string Value, int Count, DateTimeOffset MostRecentUtc, IReadOnlyList<Guid> MessageIds,
+    IReadOnlyList<string> Senders, IReadOnlyList<string> Samples, IReadOnlyList<string> RuleContexts);
 public sealed record ReviewRule(Guid Id, RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int RetentionDays);
 
 public interface IMessageReviewService
@@ -62,7 +63,9 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
 
     private static IReadOnlyList<MessageReviewGroup> GroupAsync(IReadOnlyList<MessageReviewItem> items, Func<MessageReviewItem, string> key) => items
         .GroupBy(key).OrderByDescending(x => x.Max(i => i.ReceivedUtc)).Select(group => new MessageReviewGroup(
-            group.Key, group.Count(), group.Max(x => x.ReceivedUtc), group.OrderByDescending(x => x.ReceivedUtc).Take(3).Select(x => x.Subject).ToList(),
+            group.Key, group.Count(), group.Max(x => x.ReceivedUtc), group.Select(x => x.Id).ToList(),
+            group.Select(x => x.Sender).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList(),
+            group.OrderByDescending(x => x.ReceivedUtc).Take(3).Select(x => x.Subject).ToList(),
             group.Select(x => x.RuleContext).Distinct().Take(3).ToList())).ToList();
 
     private static MessageReviewItem ToItem(SourceMessageHeader header, SourceMailbox source, IReadOnlyList<MailRule> rules, MessageDecision? decision, MessageDelivery? delivery, DateTimeOffset now)

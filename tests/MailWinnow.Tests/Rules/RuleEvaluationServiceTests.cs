@@ -113,6 +113,22 @@ public sealed class RuleEvaluationServiceTests
         Assert.Equal("own@example.test", item.Sender);
     }
 
+    [Fact]
+    public async Task GroupedReviewQueriesIncludeOwnedMessageIdsAndDistinctSendersForActions()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var first = await fixture.AddHeaderAsync("owner", "first@example.test", "Shared subject");
+        var second = await fixture.AddHeaderAsync("owner", "second@example.test", "Shared subject");
+        await fixture.AddHeaderAsync("other", "hidden@example.test", "Shared subject");
+        var review = new MessageReviewService(fixture.Db, new OwnershipAuthorizer());
+
+        var groups = await review.GetBySubjectAsync(Principal("owner"), new MessageReviewFilter(null, null, null));
+
+        var group = Assert.Single(groups);
+        Assert.Equal(new[] { first.Id, second.Id }.Order().ToArray(), group.MessageIds.Order().ToArray());
+        Assert.Equal(["first@example.test", "second@example.test"], group.Senders);
+    }
+
     private static ClaimsPrincipal Principal(string userId) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], "Test"));
 
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db) : IAsyncDisposable

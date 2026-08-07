@@ -16,7 +16,10 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("role=\"status\"", source);
         Assert.Contains("<label for=\"retention-@rule.Id\">", source);
         Assert.Contains("<label for=\"domain-rule\">", source);
-        Assert.Contains("Allow domain @domain", source);
+        Assert.Contains("Approve these messages", source);
+        Assert.Contains("Allow from address @item.Sender", source);
+        Assert.Contains("Allow from domain @domain", source);
+        Assert.Contains("action=\"/review/messages/approve\"", source);
         Assert.Contains("Replace rule", source);
         Assert.Contains("[SupplyParameterFromQuery(Name = \"outcome\")] public string? OutcomeQuery", source);
         Assert.DoesNotContain("[SupplyParameterFromQuery] public RuleOutcome? Outcome", source);
