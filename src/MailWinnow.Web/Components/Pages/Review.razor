@@ -22,14 +22,11 @@
 
 @if (View == "recent")
 {
-    <p class="text-body-secondary small">Newest first. Messages disappear after a one-time decision or a matching sender/domain rule handles them.</p>
+    <p class="text-body-secondary small">Newest first. Messages disappear after a matching sender or domain rule handles them.</p>
     @foreach (var item in _recent)
     {
         <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender · @item.Account · @item.ReceivedUtc.ToString("u")</div></div><span class="pill">@item.Outcome</span></div><div class="review-facts"><div><strong>Source</strong>@item.SourceStatus</div><div><strong>Local delivery</strong>@item.DeliveryStatus</div><div><strong>Rule</strong>@item.RuleContext</div><div><strong>Retention</strong>@item.RetentionContext</div></div><div class="decision-actions">
-            <select value="@RetentionValue(AddressKey(item.Id))" @onchange="e => SetRetention(AddressKey(item.Id), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(item.Sender, RuleMatchType.ExactSender, AddressKey(item.Id))">Allow sender @item.Sender</button>
-            <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(item.Sender, RuleMatchType.ExactSender)">Block sender @item.Sender</button>
-            @if (SenderDomain(item.Sender) is { } domain) { <button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, AddressKey(item.Id))">Allow domain @domain</button> }
-            @if (SenderDomain(item.Sender) is { } blockedDomain) { <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(blockedDomain, RuleMatchType.SenderDomain)">Block domain @blockedDomain</button> }
+            <ReviewDecisionActions Sender="@item.Sender" OnDecision="ApplyDecisionAsync" />
         </div>
         </article>
     }
@@ -38,12 +35,7 @@ else
 {
     var groups = View == "sender" ? _senders : _subjects;
     @foreach (var group in groups) { <article class="card review-card mb-2"><div class="review-card-header"><h2 class="h5">@group.Value</h2><span class="pill">@group.Count messages</span></div><div class="review-meta">Newest @group.MostRecentUtc.ToString("u")</div><div class="review-facts"><div><strong>Samples</strong>@string.Join("; ", group.Samples)</div><div><strong>Matching context</strong>@string.Join("; ", group.RuleContexts)</div></div><div class="decision-actions">
-        @foreach (var sender in group.Senders) {
-            <select value="@RetentionValue(GroupAddressKey(group.Value, sender))" @onchange="e => SetRetention(GroupAddressKey(group.Value, sender), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(sender, RuleMatchType.ExactSender, GroupAddressKey(group.Value, sender))">Allow sender @sender</button>
-            <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(sender, RuleMatchType.ExactSender)">Block sender @sender</button>
-            @if (SenderDomain(sender) is { } domain) { <button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, GroupAddressKey(group.Value, sender))">Allow domain @domain</button> }
-            @if (SenderDomain(sender) is { } blockedDomain) { <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(blockedDomain, RuleMatchType.SenderDomain)">Block domain @blockedDomain</button> }
-        }
+        @foreach (var sender in group.Senders) { <ReviewDecisionActions Sender="@sender" OnDecision="ApplyDecisionAsync" /> }
     </div></article> }
 }
 
@@ -60,27 +52,16 @@ else
     private IReadOnlyList<MessageReviewItem> _recent = [];
     private IReadOnlyList<MessageReviewGroup> _senders = [];
     private IReadOnlyList<MessageReviewGroup> _subjects = [];
-    private readonly Dictionary<string, int?> _retention = [];
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; await ReloadAsync(); }
     private async Task SwitchViewAsync(string view) { View = view; await ReloadAsync(); }
     private async Task ReloadAsync() { var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(User); _recent = await ReviewService.GetRecentAsync(User, filter); _senders = View == "sender" ? await ReviewService.GetBySenderAsync(User, filter) : []; _subjects = View == "subject" ? await ReviewService.GetBySubjectAsync(User, filter) : []; }
-    private async Task BlockAsync(string matchValue, RuleMatchType matchType)
+    private async Task ApplyDecisionAsync(ReviewDecisionRequest decision) => await ApplyAsync(async owner =>
     {
-        Error = null;
-        try
-        {
-            var owner = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("The signed-in user could not be identified.");
-            await RuleManagementService.AddOrUpdateAsync(new MailRule { OwnerUserId = owner, Action = RuleAction.PermanentlyBlock, Scope = RuleScope.User, MatchType = matchType, MatchValue = matchValue.Trim() });
-            Saved = matchType == RuleMatchType.ExactSender ? $"Blocked sender {matchValue}." : $"Blocked domain {matchValue}.";
-            await ReloadAsync();
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Error = ex.Message; }
-    }
-    private async Task AllowAsync(string matchValue, RuleMatchType matchType, string retentionKey) => await ApplyAsync(async owner =>
-    {
-        await RuleManagementService.AddOrUpdateAsync(new MailRule { OwnerUserId = owner, Action = RuleAction.PermanentlyAllow, Scope = RuleScope.User, MatchType = matchType, MatchValue = matchValue.Trim(), DeliveredMessageRetentionDays = _retention.GetValueOrDefault(retentionKey) });
-        Saved = matchType == RuleMatchType.ExactSender ? $"Allowed sender {matchValue}." : $"Allowed domain {matchValue}.";
+        await RuleManagementService.AddOrUpdateAsync(new MailRule { OwnerUserId = owner, Action = decision.Action, Scope = RuleScope.User, MatchType = decision.MatchType, MatchValue = decision.MatchValue.Trim(), DeliveredMessageRetentionDays = decision.RetentionDays });
+        var verb = decision.Action == RuleAction.PermanentlyBlock ? "Blocked" : "Allowed";
+        var target = decision.MatchType == RuleMatchType.ExactSender ? "sender" : "domain";
+        Saved = $"{verb} {target} {decision.MatchValue}.";
     });
     private async Task ApplyAsync(Func<string, Task> action)
     {
@@ -88,9 +69,4 @@ else
         try { var owner = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("The signed-in user could not be identified."); await action(owner); await ReloadAsync(); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Error = ex.Message; }
     }
-    private string RetentionValue(string key) => _retention.GetValueOrDefault(key)?.ToString() ?? string.Empty;
-    private void SetRetention(string key, string? value) => _retention[key] = int.TryParse(value, out var days) ? days : null;
-    private static string AddressKey(Guid id) => $"address:{id:N}";
-    private static string GroupAddressKey(string group, string sender) => $"group-address:{group}:{sender}";
-    private static string? SenderDomain(string sender) { var at = sender.LastIndexOf('@'); return at > 0 && at < sender.Length - 1 ? sender[(at + 1)..] : null; }
 }

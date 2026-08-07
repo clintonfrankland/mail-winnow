@@ -1,0 +1,25 @@
+<div class="decision-rule-row">
+    <select @bind="_retentionDays" aria-label="Destination retention">
+        <option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option>
+    </select>
+    <div class="split-action">
+        <button type="button" class="btn btn-success split-action-primary" @onclick="AllowSenderAsync">Allow sender</button>
+        <details class="split-action-menu">
+            <summary class="btn btn-success split-action-toggle" aria-label="More decisions"><span aria-hidden="true">▾</span></summary>
+            <div class="split-action-options" role="menu">
+                @if (Domain is { } domain) { <button type="button" role="menuitem" @onclick="() => DecideAsync(RuleAction.PermanentlyAllow, RuleMatchType.SenderDomain, domain)">Allow domain</button> }
+                <button type="button" role="menuitem" @onclick="() => DecideAsync(RuleAction.PermanentlyBlock, RuleMatchType.ExactSender, Sender)">Block sender</button>
+                @if (Domain is { } blockedDomain) { <button type="button" role="menuitem" @onclick="() => DecideAsync(RuleAction.PermanentlyBlock, RuleMatchType.SenderDomain, blockedDomain)">Block domain</button> }
+            </div>
+        </details>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Sender { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public EventCallback<ReviewDecisionRequest> OnDecision { get; set; }
+    private int? _retentionDays;
+    private string? Domain { get { var at = Sender.LastIndexOf('@'); return at > 0 && at < Sender.Length - 1 ? Sender[(at + 1)..] : null; } }
+    private async Task AllowSenderAsync() => await DecideAsync(RuleAction.PermanentlyAllow, RuleMatchType.ExactSender, Sender);
+    private async Task DecideAsync(RuleAction action, RuleMatchType matchType, string value) => await OnDecision.InvokeAsync(new(action, matchType, value, action == RuleAction.PermanentlyAllow ? _retentionDays : null));
+}

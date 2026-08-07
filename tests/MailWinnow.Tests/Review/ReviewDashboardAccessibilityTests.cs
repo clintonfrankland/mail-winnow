@@ -15,6 +15,7 @@ public sealed class ReviewDashboardAccessibilityTests
     public void DashboardProvidesAccessibleFiltersActionsAndAnnouncements()
     {
         var source = File.ReadAllText(FindReviewPage());
+        var actions = File.ReadAllText(FindPage("ReviewDecisionActions.razor"));
 
         Assert.Contains("aria-label=\"Message filters\"", source);
         Assert.Contains("aria-label=\"Review view\"", source);
@@ -22,14 +23,16 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("role=\"status\"", source);
         Assert.DoesNotContain("Approve this message", source);
         Assert.DoesNotContain("Approve these messages", source);
-        Assert.Contains("Allow sender @item.Sender", source);
-        Assert.Contains("Allow domain @domain", source);
-        Assert.DoesNotContain("DomainKey(", source);
-        Assert.DoesNotContain("GroupDomainKey(", source);
-        Assert.Contains("Block sender @item.Sender", source);
-        Assert.Contains("Block domain @blockedDomain", source);
+        Assert.Contains("<ReviewDecisionActions Sender=\"@item.Sender\"", source);
+        Assert.Contains(">Allow sender</button>", actions);
+        Assert.Contains(">Allow domain</button>", actions);
+        Assert.Contains(">Block sender</button>", actions);
+        Assert.Contains(">Block domain</button>", actions);
+        Assert.Contains("aria-label=\"More decisions\"", actions);
+        Assert.Contains("role=\"menu\"", actions);
+        Assert.DoesNotContain("@Sender</button>", actions);
+        Assert.DoesNotContain("@domain</button>", actions);
         Assert.Contains("@rendermode InteractiveServer", source);
-        Assert.Contains("@onclick=\"() => BlockAsync(item.Sender, RuleMatchType.ExactSender)\"", source);
         Assert.Contains("@onclick='() => SwitchViewAsync(\"sender\")'", source);
         Assert.Contains("private async Task SwitchViewAsync(string view) { View = view; await ReloadAsync(); }", source);
         Assert.Contains("await ReloadAsync();", source);
@@ -37,7 +40,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("href=\"/rules\">Manage rules", source);
         Assert.DoesNotContain("name=\"outcome\"", source);
         Assert.Contains("RuleOutcome.Pending", source);
-        Assert.Contains("Messages disappear after a one-time decision or a matching sender/domain rule handles them.", source);
+        Assert.Contains("Messages disappear after a matching sender or domain rule handles them.", source);
     }
 
     [Fact]
