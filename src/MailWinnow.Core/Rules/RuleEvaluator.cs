@@ -92,7 +92,7 @@ public static class RuleEvaluator
 
     private static RuleOutcome OutcomeFor(RuleAction action) => action switch
     {
-        RuleAction.PermanentlyBlock => RuleOutcome.Block,
+        RuleAction.PermanentlyBlock or RuleAction.DeleteOneMessage => RuleOutcome.Block,
         RuleAction.PermanentlyAllow or RuleAction.TemporarilyAllow or RuleAction.ApproveOneMessage => RuleOutcome.Allow,
         _ => RuleOutcome.Pending
     };

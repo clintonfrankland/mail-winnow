@@ -17,6 +17,15 @@ public sealed class RuleEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_DeleteMessageDecision_BlocksOnlyThatMessage()
+    {
+        var result = Evaluate([Rule(RuleAction.PermanentlyAllow, RuleScope.User)], RuleAction.DeleteOneMessage);
+
+        Assert.Equal(RuleOutcome.Block, result.Outcome);
+        Assert.Null(result.AppliedRule);
+    }
+
+    [Fact]
     public void Evaluate_UsesAccountBlockBeforeAccountAllowAndUserRules()
     {
         var result = Evaluate([

@@ -28,6 +28,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains(">Allow domain</button>", actions);
         Assert.Contains(">Block sender</button>", actions);
         Assert.Contains(">Block domain</button>", actions);
+        Assert.Contains(">Delete</button>", actions);
         Assert.Contains("aria-label=\"More decisions\"", actions);
         Assert.Contains("role=\"menu\"", actions);
         Assert.DoesNotContain("@Sender</button>", actions);

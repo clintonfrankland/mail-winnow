@@ -26,7 +26,7 @@
     @foreach (var item in _recent)
     {
         <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender · @item.Account · @item.ReceivedUtc.ToString("u")</div></div><span class="pill">@item.Outcome</span></div><div class="review-facts"><div><strong>Source</strong>@item.SourceStatus</div><div><strong>Local delivery</strong>@item.DeliveryStatus</div><div><strong>Rule</strong>@item.RuleContext</div><div><strong>Retention</strong>@item.RetentionContext</div></div><div class="decision-actions">
-            <ReviewDecisionActions Sender="@item.Sender" OnDecision="ApplyDecisionAsync" />
+            <ReviewDecisionActions Sender="@item.Sender" MessageIds="@(new[] { item.Id })" OnDecision="ApplyDecisionAsync" />
         </div>
         </article>
     }
@@ -35,7 +35,7 @@ else
 {
     var groups = View == "sender" ? _senders : _subjects;
     @foreach (var group in groups) { <article class="card review-card mb-2"><div class="review-card-header"><h2 class="h5">@group.Value</h2><span class="pill">@group.Count messages</span></div><div class="review-meta">Newest @group.MostRecentUtc.ToString("u")</div><div class="review-facts"><div><strong>Samples</strong>@string.Join("; ", group.Samples)</div><div><strong>Matching context</strong>@string.Join("; ", group.RuleContexts)</div></div><div class="decision-actions">
-        @foreach (var sender in group.Senders) { <ReviewDecisionActions Sender="@sender" OnDecision="ApplyDecisionAsync" /> }
+        @foreach (var sender in group.Senders) { <ReviewDecisionActions Sender="@sender" MessageIds="@group.MessageIds" OnDecision="ApplyDecisionAsync" /> }
     </div></article> }
 }
 
@@ -58,6 +58,12 @@ else
     private async Task ReloadAsync() { var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(User); _recent = await ReviewService.GetRecentAsync(User, filter); _senders = View == "sender" ? await ReviewService.GetBySenderAsync(User, filter) : []; _subjects = View == "subject" ? await ReviewService.GetBySubjectAsync(User, filter) : []; }
     private async Task ApplyDecisionAsync(ReviewDecisionRequest decision) => await ApplyAsync(async owner =>
     {
+        if (decision.Action == RuleAction.DeleteOneMessage)
+        {
+            foreach (var id in decision.MessageIds.Distinct()) await RuleManagementService.SetMessageDecisionAsync(new MessageDecision { OwnerUserId = owner, SourceMessageHeaderId = id, Action = RuleAction.DeleteOneMessage });
+            Saved = decision.MessageIds.Count == 1 ? "Message queued for deletion." : $"{decision.MessageIds.Count} messages queued for deletion.";
+            return;
+        }
         await RuleManagementService.AddOrUpdateAsync(new MailRule { OwnerUserId = owner, Action = decision.Action, Scope = RuleScope.User, MatchType = decision.MatchType, MatchValue = decision.MatchValue.Trim(), DeliveredMessageRetentionDays = decision.RetentionDays });
         var verb = decision.Action == RuleAction.PermanentlyBlock ? "Blocked" : "Allowed";
         var target = decision.MatchType == RuleMatchType.ExactSender ? "sender" : "domain";

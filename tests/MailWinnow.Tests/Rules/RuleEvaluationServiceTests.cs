@@ -46,6 +46,7 @@ public sealed class RuleEvaluationServiceTests
     [Theory]
     [InlineData(RuleAction.ApproveOneMessage)]
     [InlineData(RuleAction.PendingReview)]
+    [InlineData(RuleAction.DeleteOneMessage)]
     public async Task AddOrUpdate_RejectsMessageOnlyActions(RuleAction action)
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -56,6 +57,24 @@ public sealed class RuleEvaluationServiceTests
             OwnerUserId = "owner", Action = action, Scope = RuleScope.User,
             MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test"
         }));
+    }
+
+    [Fact]
+    public async Task DeleteMessageDecision_BlocksHeaderWithoutCreatingReusableRule()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var header = await fixture.AddHeaderAsync("owner", "sender@example.test", "Delete me");
+        var evaluator = new RuleEvaluationService(fixture.Db);
+        var service = new RuleManagementService(fixture.Db, evaluator);
+
+        await service.SetMessageDecisionAsync(new MessageDecision
+        {
+            OwnerUserId = "owner", SourceMessageHeaderId = header.Id, Action = RuleAction.DeleteOneMessage
+        });
+
+        Assert.Equal(RuleOutcome.Block, (await fixture.Db.SourceMessageHeaders.FindAsync(header.Id))!.EvaluationOutcome);
+        Assert.Empty(await fixture.Db.MailRules.ToListAsync());
+        Assert.Equal(RuleAction.DeleteOneMessage, (await fixture.Db.MessageDecisions.SingleAsync()).Action);
     }
 
     [Fact]

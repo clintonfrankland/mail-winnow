@@ -99,7 +99,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
 
     public async Task SetMessageDecisionAsync(MessageDecision decision, CancellationToken cancellationToken = default)
     {
-        if (decision.Action is not (RuleAction.ApproveOneMessage or RuleAction.PendingReview)) throw new ArgumentException("Message decisions must be approve-one-message or pending-review.", nameof(decision));
+        if (decision.Action is not (RuleAction.ApproveOneMessage or RuleAction.PendingReview or RuleAction.DeleteOneMessage)) throw new ArgumentException("Message decisions must be approve-one-message, delete-one-message, or pending-review.", nameof(decision));
         var headerExists = await db.SourceMessageHeaders.AnyAsync(x => x.Id == decision.SourceMessageHeaderId && db.SourceMailboxes.Any(m => m.Id == x.SourceMailboxId && m.OwnerUserId == decision.OwnerUserId), cancellationToken);
         if (!headerExists) throw new InvalidOperationException("The message header was not found for this user.");
         var existing = await db.MessageDecisions.SingleOrDefaultAsync(x => x.OwnerUserId == decision.OwnerUserId && x.SourceMessageHeaderId == decision.SourceMessageHeaderId, cancellationToken);

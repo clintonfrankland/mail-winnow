@@ -7,5 +7,6 @@ public enum RuleAction
     TemporarilyAllow,
     PermanentlyBlock,
     ApproveOneMessage,
-    PendingReview
+    PendingReview,
+    DeleteOneMessage
 }
