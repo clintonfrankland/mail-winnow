@@ -160,6 +160,48 @@ public sealed class RuleEvaluationServiceTests
         Assert.Equal(["large@example.test", "small@example.test"], groups.Select(x => x.Value));
     }
 
+    [Theory]
+    [InlineData(RuleAction.PermanentlyAllow)]
+    [InlineData(RuleAction.PermanentlyBlock)]
+    public async Task ReviewQueriesHideMessagesHandledBySenderOrDomainRules(RuleAction action)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.AddHeaderAsync("owner", "handled@example.test", "Handled by sender");
+        await fixture.AddHeaderAsync("owner", "another@domain.test", "Handled by domain");
+        var visible = await fixture.AddHeaderAsync("owner", "pending@elsewhere.test", "Needs review");
+        fixture.Db.MailRules.AddRange(
+            new MailRule { OwnerUserId = "owner", Action = action, Scope = RuleScope.User, MatchType = RuleMatchType.ExactSender, MatchValue = "handled@example.test" },
+            new MailRule { OwnerUserId = "owner", Action = action, Scope = RuleScope.User, MatchType = RuleMatchType.SenderDomain, MatchValue = "domain.test" });
+        await fixture.Db.SaveChangesAsync();
+        var review = new MessageReviewService(fixture.Db, new OwnershipAuthorizer());
+
+        var recent = await review.GetRecentAsync(Principal("owner"), new MessageReviewFilter(null, null, null));
+        var senders = await review.GetBySenderAsync(Principal("owner"), new MessageReviewFilter(null, null, null));
+        var subjects = await review.GetBySubjectAsync(Principal("owner"), new MessageReviewFilter(null, null, null));
+
+        Assert.Equal(visible.Id, Assert.Single(recent).Id);
+        Assert.Equal("pending@elsewhere.test", Assert.Single(senders).Value);
+        Assert.Equal("Needs review", Assert.Single(subjects).Value);
+    }
+
+    [Fact]
+    public async Task ReviewQueriesHideMessagesWithOneTimeApproval()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var handled = await fixture.AddHeaderAsync("owner", "approved@example.test", "Approved");
+        var visible = await fixture.AddHeaderAsync("owner", "pending@example.test", "Pending");
+        fixture.Db.MessageDecisions.Add(new MessageDecision
+        {
+            OwnerUserId = "owner", SourceMessageHeaderId = handled.Id, Action = RuleAction.ApproveOneMessage
+        });
+        await fixture.Db.SaveChangesAsync();
+        var review = new MessageReviewService(fixture.Db, new OwnershipAuthorizer());
+
+        var result = await review.GetRecentAsync(Principal("owner"), new MessageReviewFilter(null, null, null));
+
+        Assert.Equal(visible.Id, Assert.Single(result).Id);
+    }
+
     private static ClaimsPrincipal Principal(string userId) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], "Test"));
 
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db) : IAsyncDisposable

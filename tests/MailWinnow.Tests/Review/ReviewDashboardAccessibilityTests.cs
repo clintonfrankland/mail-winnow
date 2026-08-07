@@ -1,8 +1,5 @@
 namespace MailWinnow.Tests.Review;
 
-using MailWinnow.Core.Rules;
-using MailWinnow.Web.Components.Pages;
-
 public sealed class ReviewDashboardAccessibilityTests
 {
     [Fact]
@@ -21,8 +18,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("Block domain @blockedDomain", source);
         Assert.Contains("action=\"/review/messages/approve\"", source);
         Assert.Contains("href=\"/rules\">Manage rules", source);
-        Assert.Contains("[SupplyParameterFromQuery(Name = \"outcome\")] public string? OutcomeQuery", source);
-        Assert.DoesNotContain("[SupplyParameterFromQuery] public RuleOutcome? Outcome", source);
+        Assert.DoesNotContain("name=\"outcome\"", source);
+        Assert.Contains("RuleOutcome.Pending", source);
+        Assert.Contains("Messages disappear after a one-time decision or a matching sender/domain rule handles them.", source);
     }
 
     [Fact]
@@ -48,16 +46,6 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("<option value=\"1\" selected=\"@(selected == 1)\">1 day</option>", source);
         Assert.Contains("href=\"rules\"", navigation);
     }
-
-    [Theory]
-    [InlineData(null, null)]
-    [InlineData("", null)]
-    [InlineData("not-a-status", null)]
-    [InlineData("Pending", RuleOutcome.Pending)]
-    [InlineData("allow", RuleOutcome.Allow)]
-    [InlineData("BLOCK", RuleOutcome.Block)]
-    public void OutcomeQueryIsParsedSafely(string? value, RuleOutcome? expected) =>
-        Assert.Equal(expected, ReviewQueryParser.ParseOutcome(value));
 
     private static string FindReviewPage() => FindPage("Review.razor");
 

@@ -39,8 +39,10 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
         var rules = await db.MailRules.Where(x => x.OwnerUserId == owner).ToListAsync(cancellationToken);
         var deliveries = await db.MessageDeliveries.Where(x => x.OwnerUserId == owner && headers.Select(h => h.Id).Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var items = headers.Select(header => ToItem(header, sources[header.SourceMailboxId], rules, decisions.GetValueOrDefault(header.Id), deliveries.GetValueOrDefault(header.Id), now));
-        if (filter.Outcome is { } outcome) items = items.Where(x => x.Outcome == outcome);
+        // Message Review is an inbox for unresolved decisions, not a history view.
+        // Evaluate against the current rules so expired or edited rules are reflected immediately.
+        var items = headers.Select(header => ToItem(header, sources[header.SourceMailboxId], rules, decisions.GetValueOrDefault(header.Id), deliveries.GetValueOrDefault(header.Id), now))
+            .Where(x => x.Outcome == RuleOutcome.Pending);
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var needle = filter.Search.Trim();

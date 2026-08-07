@@ -11,7 +11,6 @@
 <form method="get" class="card section-card review-filter" aria-label="Message filters">
     <input type="hidden" name="view" value="@View" />
     <label>Account <select class="form-select" name="sourceMailboxId"><option value="">All accounts</option>@foreach (var source in _sources) { <option value="@source.Id" selected="@(SourceMailboxId == source.Id)">@source.DisplayName</option> }</select></label>
-    <label>Status <select class="form-select" name="outcome"><option value="">All statuses</option><option value="Pending" selected="@(Outcome == RuleOutcome.Pending)">Pending review</option><option value="Allow" selected="@(Outcome == RuleOutcome.Allow)">Allowed</option><option value="Block" selected="@(Outcome == RuleOutcome.Block)">Blocked</option></select></label>
     <label>Sender or subject <input class="form-control" name="search" value="@Search" /></label>
     <button class="btn btn-primary">Apply filters</button>
 </form>
@@ -20,7 +19,7 @@
 
 @if (View == "recent")
 {
-    <p class="text-body-secondary small">Newest first. Review and delivery status are tracked separately.</p>
+    <p class="text-body-secondary small">Newest first. Messages disappear after a one-time decision or a matching sender/domain rule handles them.</p>
     @foreach (var item in _recent)
     {
         <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender · @item.Account · @item.ReceivedUtc.ToString("u")</div></div><span class="pill">@item.Outcome</span></div><div class="review-facts"><div><strong>Source</strong>@item.SourceStatus</div><div><strong>Local delivery</strong>@item.DeliveryStatus</div><div><strong>Rule</strong>@item.RuleContext</div><div><strong>Retention</strong>@item.RetentionContext</div></div><div class="decision-actions">
@@ -55,7 +54,6 @@ else
     [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
     [SupplyParameterFromQuery] public string? View { get; set; }
     [SupplyParameterFromQuery] public Guid? SourceMailboxId { get; set; }
-    [SupplyParameterFromQuery(Name = "outcome")] public string? OutcomeQuery { get; set; }
     [SupplyParameterFromQuery] public string? Search { get; set; }
     [SupplyParameterFromQuery] public string? Error { get; set; }
     [SupplyParameterFromQuery] public string? Saved { get; set; }
@@ -63,8 +61,7 @@ else
     private IReadOnlyList<MessageReviewItem> _recent = [];
     private IReadOnlyList<MessageReviewGroup> _senders = [];
     private IReadOnlyList<MessageReviewGroup> _subjects = [];
-    private RuleOutcome? Outcome => ReviewQueryParser.ParseOutcome(OutcomeQuery);
-    protected override async Task OnInitializedAsync() { View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; var filter = new MessageReviewFilter(SourceMailboxId, Outcome, Search); _sources = await MailboxService.ListSourcesAsync(HttpContext.User); _recent = await ReviewService.GetRecentAsync(HttpContext.User, filter); if (View == "sender") _senders = await ReviewService.GetBySenderAsync(HttpContext.User, filter); if (View == "subject") _subjects = await ReviewService.GetBySubjectAsync(HttpContext.User, filter); }
-    private string Link(string view) => $"/review?view={view}&sourceMailboxId={SourceMailboxId}&outcome={Outcome}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
+    protected override async Task OnInitializedAsync() { View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(HttpContext.User); _recent = await ReviewService.GetRecentAsync(HttpContext.User, filter); if (View == "sender") _senders = await ReviewService.GetBySenderAsync(HttpContext.User, filter); if (View == "subject") _subjects = await ReviewService.GetBySubjectAsync(HttpContext.User, filter); }
+    private string Link(string view) => $"/review?view={view}&sourceMailboxId={SourceMailboxId}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
     private static string? SenderDomain(string sender) { var at = sender.LastIndexOf('@'); return at > 0 && at < sender.Length - 1 ? sender[(at + 1)..] : null; }
 }
