@@ -1,17 +1,8 @@
-﻿@inherits LayoutComponentBase
-
+@inherits LayoutComponentBase
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
+    <aside class="sidebar"><NavMenu /></aside>
+    <main class="app-main">
+        <header class="top-row"><div class="environment-label"><span class="status-dot"></span> Private household mail</div><AuthorizeView><Authorized><span class="session-label">Secure session</span></Authorized></AuthorizeView></header>
+        <article class="content">@Body</article>
     </main>
 </div>

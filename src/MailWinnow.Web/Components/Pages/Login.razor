@@ -1,21 +1,8 @@
 @page "/login"
 @attribute [AllowAnonymous]
-
 <PageTitle>Sign in</PageTitle>
-<h1>Sign in</h1>
-@if (!string.IsNullOrWhiteSpace(Error))
-{
-    <div class="alert alert-danger">@Error</div>
-}
-<form method="post" action="/auth/login">
-    <AntiforgeryToken />
-    <div class="mb-3"><label>Email <input class="form-control" name="Email" type="email" required /></label></div>
-    <div class="mb-3"><label>Password <input class="form-control" name="Password" type="password" required /></label></div>
-    <div class="form-check mb-3"><label><input class="form-check-input" name="RememberMe" type="checkbox" value="true" /> Remember me</label></div>
-    <button class="btn btn-primary" type="submit">Sign in</button>
-</form>
-<p class="mt-3"><a href="setup">First-run setup</a></p>
-
-@code {
-    [SupplyParameterFromQuery] public string? Error { get; set; }
-}
+<div class="auth-wrap"><section class="card auth-card"><div class="auth-mark">MW</div><div class="eyebrow">Welcome back</div><h1>Sign in to Mail Winnow</h1><p class="text-body-secondary">Access your private household mail workspace.</p>
+@if (!string.IsNullOrWhiteSpace(Error)){<div class="alert alert-danger" role="alert">@Error</div>}
+<form method="post" action="/auth/login" class="form-stack"><AntiforgeryToken /><label>Email address<input class="form-control" name="Email" type="email" autocomplete="username" required /></label><label>Password<input class="form-control" name="Password" type="password" autocomplete="current-password" required /></label><label class="form-check"><input class="form-check-input" name="RememberMe" type="checkbox" value="true" /> Keep me signed in</label><button class="btn btn-primary" type="submit">Sign in securely</button></form>
+<p class="small text-body-secondary mt-3">Setting up a new installation? <a href="setup">First-run setup</a></p></section></div>
+@code { [SupplyParameterFromQuery] public string? Error { get; set; } }

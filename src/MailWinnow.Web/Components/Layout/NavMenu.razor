@@ -1,41 +1,22 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">MailWinnow.Web</a>
-    </div>
-</div>
-
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
+<div class="brand-row"><a class="brand" href="" aria-label="Mail Winnow home"><span class="brand-mark">MW</span><span><strong>Mail Winnow</strong><small>Selective delivery</small></span></a></div>
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" aria-label="Toggle navigation" />
 <div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-
+    <nav class="nav" aria-label="Primary navigation">
+        <div class="nav-section-label">Workspace</div>
+        <div class="nav-item"><NavLink class="nav-link" href="" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">⌂</span> Overview</NavLink></div>
         <AuthorizeView Roles="Administrator">
-            <div class="nav-item px-3"><NavLink class="nav-link" href="admin/operations">Operations</NavLink></div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="admin/household">
-                    <span class="bi bi-people-fill-nav-menu" aria-hidden="true"></span> Household
-                </NavLink>
-            </div>
+            <div class="nav-section-label">Administration</div>
+            <div class="nav-item"><NavLink class="nav-link" href="admin/operations"><span class="nav-icon" aria-hidden="true">◫</span> Operations</NavLink></div>
+            <div class="nav-item"><NavLink class="nav-link" href="admin/household"><span class="nav-icon" aria-hidden="true">♙</span> Household</NavLink></div>
         </AuthorizeView>
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item px-3"><NavLink class="nav-link" href="mailboxes">Mailboxes</NavLink></div>
-                <div class="nav-item px-3"><NavLink class="nav-link" href="review">Message review</NavLink></div>
-                <div class="nav-item px-3">
-                    <form method="post" action="/auth/logout">
-                        <AntiforgeryToken />
-                        <button class="nav-link btn btn-link" type="submit">Sign out</button>
-                    </form>
-                </div>
+                <div class="nav-section-label">Mail</div>
+                <div class="nav-item"><NavLink class="nav-link" href="mailboxes"><span class="nav-icon" aria-hidden="true">✉</span> Mailboxes</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="review"><span class="nav-icon" aria-hidden="true">✓</span> Message review</NavLink></div>
+                <div class="nav-item nav-signout"><form method="post" action="/auth/logout"><AntiforgeryToken /><button class="nav-link" type="submit"><span class="nav-icon" aria-hidden="true">↪</span> Sign out</button></form></div>
             </Authorized>
-            <NotAuthorized>
-                <div class="nav-item px-3"><NavLink class="nav-link" href="login">Sign in</NavLink></div>
-            </NotAuthorized>
+            <NotAuthorized><div class="nav-item"><NavLink class="nav-link" href="login"><span class="nav-icon" aria-hidden="true">↪</span> Sign in</NavLink></div></NotAuthorized>
         </AuthorizeView>
     </nav>
 </div>

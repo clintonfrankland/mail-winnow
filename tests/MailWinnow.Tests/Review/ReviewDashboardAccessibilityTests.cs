@@ -17,7 +17,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("<label for=\"retention-@rule.Id\">", source);
         Assert.Contains("<label for=\"domain-rule\">", source);
         Assert.Contains("Allow domain @domain", source);
-        Assert.Contains("Replace this rule", source);
+        Assert.Contains("Replace rule", source);
         Assert.Contains("[SupplyParameterFromQuery(Name = \"outcome\")] public string? OutcomeQuery", source);
         Assert.DoesNotContain("[SupplyParameterFromQuery] public RuleOutcome? Outcome", source);
     }

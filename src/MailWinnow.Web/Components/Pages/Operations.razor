@@ -1,40 +1,12 @@
 @page "/admin/operations"
 @attribute [Authorize(Policy = AuthConstants.AdministratorPolicy)]
 @inject IAdministrationService Administration
-
 <PageTitle>Operations</PageTitle>
-<h1>Administration and worker health</h1>
-@if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger">@Error</div> }
-@if (Saved) { <div class="alert alert-success">Operation queued.</div> }
-@if (_snapshot is not null)
-{
-    <p>Database: @(_snapshot.DatabaseHealthy ? "Healthy" : "Unavailable") · Local IMAP: @_snapshot.LocalImapStatus · Worker heartbeat: @(_snapshot.WorkerLastSeenUtc?.ToLocalTime().ToString("g") ?? "Not yet received")</p>
-    <p>Pending headers: @_snapshot.PendingHeaders · Pending deliveries: @_snapshot.PendingDeliveries · Failed deliveries: @_snapshot.FailedDeliveries · Expiration failures: @_snapshot.ExpirationFailures</p>
-    <h2>Source mailbox synchronization</h2>
-    @foreach (var mailbox in _snapshot.Mailboxes)
-    {
-        <section class="card p-3 mb-2"><strong>@mailbox.DisplayName</strong> · @(mailbox.Enabled ? "Enabled" : "Paused") · @mailbox.Status
-            <div>Last successful sync: @(mailbox.LastSuccessfulSyncUtc?.ToLocalTime().ToString("g") ?? "never") · @mailbox.SanitizedError</div>
-            <form method="post" action="/admin/operations/sync" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@mailbox.Id" /><button class="btn btn-secondary btn-sm" type="submit">Sync</button></form>
-            <form method="post" action="/admin/operations/mailbox-enabled" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@mailbox.Id" /><input type="hidden" name="Enabled" value="@(!mailbox.Enabled)" /><button class="btn btn-secondary btn-sm" type="submit">@(mailbox.Enabled ? "Pause" : "Enable")</button></form>
-        </section>
-    }
-    <h2>Failed deliveries</h2>
-    @if (_snapshot.DeliveryFailures.Count == 0) { <p>No failed deliveries.</p> }
-    @foreach (var delivery in _snapshot.DeliveryFailures)
-    {
-        <section class="card p-3 mb-2"><strong>@delivery.Stage failure</strong> · @(delivery.SanitizedError ?? "The delivery failed.")
-            <form method="post" action="/admin/operations/retry-delivery" class="d-inline"><AntiforgeryToken /><input type="hidden" name="Id" value="@delivery.Id" /><button class="btn btn-secondary btn-sm" type="submit">Retry delivery</button></form>
-        </section>
-    }
-    <h2>Recent audit events</h2>
-    <ul>@foreach (var audit in _snapshot.AuditEvents) { <li>@audit.OccurredUtc.ToLocalTime().ToString("g") — @audit.EventType (@audit.ResourceType @audit.ResourceId)</li> }</ul>
-}
-
-@code {
-    [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
-    [SupplyParameterFromQuery] public string? Error { get; set; }
-    [SupplyParameterFromQuery] public bool Saved { get; set; }
-    private AdministrationSnapshot? _snapshot;
-    protected override async Task OnInitializedAsync() => _snapshot = await Administration.GetSnapshotAsync(HttpContext.User);
-}
+<header class="page-heading"><div class="eyebrow">Administration</div><h1>Operations</h1><p>Monitor service health, mailbox synchronization, and delivery activity.</p></header>
+@if (!string.IsNullOrWhiteSpace(Error)){<div class="alert alert-danger" role="alert">@Error</div>}@if(Saved){<div class="alert alert-success" role="status">Operation queued successfully.</div>}
+@if(_snapshot is not null){<section class="metric-grid" aria-label="Service health"><article class="card metric-card"><div class="metric-label">Database</div><div class="metric-value">@(_snapshot.DatabaseHealthy?"Healthy":"Unavailable")</div><div class="metric-meta">Primary application store</div></article><article class="card metric-card"><div class="metric-label">Local IMAP</div><div class="metric-value">@_snapshot.LocalImapStatus</div><div class="metric-meta">Destination mail service</div></article><article class="card metric-card"><div class="metric-label">Worker heartbeat</div><div class="metric-value">@(_snapshot.WorkerLastSeenUtc is null?"Waiting":"Online")</div><div class="metric-meta">@(_snapshot.WorkerLastSeenUtc?.ToLocalTime().ToString("g")??"Not yet received")</div></article><article class="card metric-card"><div class="metric-label">Pending review</div><div class="metric-value">@_snapshot.PendingHeaders</div><div class="metric-meta">Message headers</div></article></section>
+<section class="card section-card"><div class="section-header"><div><h2>Delivery queue</h2><p class="text-body-secondary mb-0">Current delivery and expiration workload.</p></div></div><div class="metric-grid mb-0"><div><div class="metric-label">Pending deliveries</div><div class="metric-value">@_snapshot.PendingDeliveries</div></div><div><div class="metric-label">Failed deliveries</div><div class="metric-value">@_snapshot.FailedDeliveries</div></div><div><div class="metric-label">Expiration failures</div><div class="metric-value">@_snapshot.ExpirationFailures</div></div></div></section>
+<section class="section-card card"><div class="section-header"><div><h2>Source synchronization</h2><p class="text-body-secondary mb-0">Control and inspect connected source mailboxes.</p></div></div><div class="stack">@foreach(var mailbox in _snapshot.Mailboxes){<article class="list-row"><div class="list-row-main"><strong>@mailbox.DisplayName</strong><div class="small text-body-secondary">Last successful sync: @(mailbox.LastSuccessfulSyncUtc?.ToLocalTime().ToString("g")??"Never")</div>@if(!string.IsNullOrWhiteSpace(mailbox.SanitizedError)){<div class="small text-danger">@mailbox.SanitizedError</div>}</div><div class="list-row-actions"><span class="pill @(mailbox.Enabled?"pill-success":"pill-warning")">@(mailbox.Enabled?"Enabled":"Paused") · @mailbox.Status</span><form method="post" action="/admin/operations/sync"><AntiforgeryToken/><input type="hidden" name="Id" value="@mailbox.Id"/><button class="btn btn-primary btn-sm">Sync now</button></form><form method="post" action="/admin/operations/mailbox-enabled"><AntiforgeryToken/><input type="hidden" name="Id" value="@mailbox.Id"/><input type="hidden" name="Enabled" value="@(!mailbox.Enabled)"/><button class="btn btn-outline-secondary btn-sm">@(mailbox.Enabled?"Pause":"Enable")</button></form></div></article>}</div></section>
+<section class="card section-card"><div class="section-header"><div><h2>Failed deliveries</h2><p class="text-body-secondary mb-0">Items that require administrative attention.</p></div></div>@if(_snapshot.DeliveryFailures.Count==0){<div class="empty-state">No failed deliveries. Everything is moving normally.</div>}else{<div class="stack">@foreach(var delivery in _snapshot.DeliveryFailures){<article class="list-row"><div><strong>@delivery.Stage failure</strong><div class="small text-danger">@(delivery.SanitizedError??"The delivery failed.")</div></div><form method="post" action="/admin/operations/retry-delivery"><AntiforgeryToken/><input type="hidden" name="Id" value="@delivery.Id"/><button class="btn btn-outline-secondary btn-sm">Retry delivery</button></form></article>}</div>}</section>
+<section class="card section-card"><div class="section-header"><div><h2>Recent audit events</h2><p class="text-body-secondary mb-0">Security and delivery activity, newest first.</p></div></div><ul class="audit-list">@foreach(var audit in _snapshot.AuditEvents){<li><time>@audit.OccurredUtc.ToLocalTime().ToString("g")</time><span><strong>@audit.EventType</strong> <span class="text-body-secondary">@audit.ResourceType · @audit.ResourceId</span></span></li>}</ul></section>}
+@code { [CascadingParameter] public HttpContext HttpContext{get;set;}=null!; [SupplyParameterFromQuery] public string? Error{get;set;} [SupplyParameterFromQuery] public bool Saved{get;set;} private AdministrationSnapshot? _snapshot; protected override async Task OnInitializedAsync()=>_snapshot=await Administration.GetSnapshotAsync(HttpContext.User); }

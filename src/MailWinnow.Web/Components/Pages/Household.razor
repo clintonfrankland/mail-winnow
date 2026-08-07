@@ -1,52 +1,9 @@
 @page "/admin/household"
 @attribute [Authorize(Policy = AuthConstants.AdministratorPolicy)]
 @inject IHouseholdAccountService Accounts
-
-<PageTitle>Household accounts</PageTitle>
-<h1>Household accounts</h1>
-@if (!string.IsNullOrWhiteSpace(Error))
-{
-    <div class="alert alert-danger">@Error</div>
-}
-else if (Saved)
-{
-    <div class="alert alert-success">Account updated.</div>
-}
-
-<h2>Create account</h2>
-<form method="post" action="/auth/household/create" class="mb-4">
-    <AntiforgeryToken />
-    <input class="form-control mb-2" name="Email" type="email" placeholder="Email" required />
-    <input class="form-control mb-2" name="Password" type="password" minlength="12" placeholder="Temporary password" required />
-    <button class="btn btn-primary" type="submit">Create</button>
-</form>
-
-@foreach (var account in _accounts)
-{
-    <section class="card p-3 mb-3">
-        <strong>@account.Email</strong>
-        <span>@(account.IsAdministrator ? "Administrator" : "Household user") · @(account.IsEnabled ? "Enabled" : "Disabled")</span>
-        <form method="post" action="/auth/household/enabled" class="mt-2">
-            <AntiforgeryToken />
-            <input type="hidden" name="UserId" value="@account.Id" />
-            <input type="hidden" name="Enabled" value="@(!account.IsEnabled)" />
-            <button class="btn btn-secondary" type="submit">@(account.IsEnabled ? "Disable" : "Enable")</button>
-        </form>
-        <form method="post" action="/auth/household/password" class="mt-2">
-            <AntiforgeryToken />
-            <input type="hidden" name="UserId" value="@account.Id" />
-            <input class="form-control mb-2" name="Password" type="password" minlength="12" placeholder="New password" required />
-            <button class="btn btn-secondary" type="submit">Reset password</button>
-        </form>
-    </section>
-}
-
-@code {
-    [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
-    [SupplyParameterFromQuery] public string? Error { get; set; }
-    [SupplyParameterFromQuery] public bool Saved { get; set; }
-    private IReadOnlyList<HouseholdAccount> _accounts = [];
-
-    protected override async Task OnInitializedAsync() =>
-        _accounts = await Accounts.ListAsync(HttpContext.User);
-}
+<PageTitle>Household</PageTitle>
+<header class="page-heading"><div class="eyebrow">Administration</div><h1>Household accounts</h1><p>Create and manage access for the people who use this Mail Winnow installation.</p></header>
+@if (!string.IsNullOrWhiteSpace(Error)){<div class="alert alert-danger" role="alert">@Error</div>}else if(Saved){<div class="alert alert-success" role="status">Account updated successfully.</div>}
+<section class="card section-card"><div class="section-header"><div><h2>Add a household member</h2><p class="text-body-secondary mb-0">They can change their temporary password after signing in.</p></div></div><form method="post" action="/auth/household/create" class="review-filter"><AntiforgeryToken /><label>Email address<input class="form-control" name="Email" type="email" autocomplete="off" placeholder="name@example.com" required /></label><label>Temporary password<input class="form-control" name="Password" type="password" minlength="12" autocomplete="new-password" placeholder="At least 12 characters" required /></label><span></span><button class="btn btn-primary" type="submit">Create account</button></form></section>
+<section><div class="section-header"><div><h2>Current accounts</h2><p class="text-body-secondary mb-0">@_accounts.Count household account@(_accounts.Count==1?"":"s")</p></div></div><div class="stack">@foreach(var account in _accounts){<article class="list-row"><div class="list-row-main"><strong>@account.Email</strong><div class="small text-body-secondary mt-1"><span class="pill">@(account.IsAdministrator?"Administrator":"Household user")</span> <span class="pill @(account.IsEnabled?"pill-success":"pill-warning")">@(account.IsEnabled?"Enabled":"Disabled")</span></div></div><div class="list-row-actions"><form method="post" action="/auth/household/enabled"><AntiforgeryToken /><input type="hidden" name="UserId" value="@account.Id"/><input type="hidden" name="Enabled" value="@(!account.IsEnabled)"/><button class="btn btn-outline-secondary btn-sm" type="submit">@(account.IsEnabled?"Disable":"Enable")</button></form><details><summary class="btn btn-outline-secondary btn-sm">Reset password</summary><form method="post" action="/auth/household/password" class="card card-body form-stack mt-2"><AntiforgeryToken /><input type="hidden" name="UserId" value="@account.Id"/><label>New password<input class="form-control" name="Password" type="password" minlength="12" autocomplete="new-password" required /></label><button class="btn btn-primary btn-sm" type="submit">Save new password</button></form></details></div></article>}</div></section>
+@code { [CascadingParameter] public HttpContext HttpContext { get; set; }=null!; [SupplyParameterFromQuery] public string? Error{get;set;} [SupplyParameterFromQuery] public bool Saved{get;set;} private IReadOnlyList<HouseholdAccount> _accounts=[]; protected override async Task OnInitializedAsync()=>_accounts=await Accounts.ListAsync(HttpContext.User); }

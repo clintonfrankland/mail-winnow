@@ -1,8 +1,10 @@
-﻿@page "/"
+@page "/"
 @attribute [Authorize]
-
-<PageTitle>Home</PageTitle>
-
-<h1>Hello, world!</h1>
-
-Welcome to your new app.
+<PageTitle>Overview</PageTitle>
+<section class="hero"><div class="eyebrow">Private mail, thoughtfully filtered</div><h1>Keep the messages that matter. Leave the noise behind.</h1><p>Mail Winnow watches your source inboxes, applies your household rules, and delivers only approved messages to your private local mailbox.</p><div class="hero-actions"><a class="btn btn-primary" href="review">Review messages</a><a class="btn btn-outline-primary" href="mailboxes">Manage mailboxes</a></div></section>
+<div class="page-heading"><div class="eyebrow">Your workspace</div><h2>What would you like to do?</h2></div>
+<section class="quick-grid" aria-label="Quick actions">
+    <a class="card quick-card" href="review"><span class="quick-icon">✓</span><h3>Review messages</h3><p class="text-body-secondary">Approve, block, and create reusable sender rules.</p></a>
+    <a class="card quick-card" href="mailboxes"><span class="quick-icon">✉</span><h3>Manage mailboxes</h3><p class="text-body-secondary">Connect sources and confirm your local destination.</p></a>
+    <AuthorizeView Roles="Administrator"><a class="card quick-card" href="admin/operations"><span class="quick-icon">◫</span><h3>Check operations</h3><p class="text-body-secondary">Monitor worker health, sync activity, and delivery status.</p></a></AuthorizeView>
+</section>
