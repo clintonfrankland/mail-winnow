@@ -24,6 +24,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("Approve these messages", source);
         Assert.Contains("Allow sender @item.Sender", source);
         Assert.Contains("Allow domain @domain", source);
+        Assert.DoesNotContain("DomainKey(", source);
+        Assert.DoesNotContain("GroupDomainKey(", source);
         Assert.Contains("Block sender @item.Sender", source);
         Assert.Contains("Block domain @blockedDomain", source);
         Assert.Contains("@rendermode InteractiveServer", source);

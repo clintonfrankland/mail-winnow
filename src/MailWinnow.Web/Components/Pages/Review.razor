@@ -28,7 +28,7 @@
         <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender · @item.Account · @item.ReceivedUtc.ToString("u")</div></div><span class="pill">@item.Outcome</span></div><div class="review-facts"><div><strong>Source</strong>@item.SourceStatus</div><div><strong>Local delivery</strong>@item.DeliveryStatus</div><div><strong>Rule</strong>@item.RuleContext</div><div><strong>Retention</strong>@item.RetentionContext</div></div><div class="decision-actions">
             <select value="@RetentionValue(AddressKey(item.Id))" @onchange="e => SetRetention(AddressKey(item.Id), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(item.Sender, RuleMatchType.ExactSender, AddressKey(item.Id))">Allow sender @item.Sender</button>
             <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(item.Sender, RuleMatchType.ExactSender)">Block sender @item.Sender</button>
-            @if (SenderDomain(item.Sender) is { } domain) { <select value="@RetentionValue(DomainKey(item.Id))" @onchange="e => SetRetention(DomainKey(item.Id), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, DomainKey(item.Id))">Allow domain @domain</button> }
+            @if (SenderDomain(item.Sender) is { } domain) { <button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, AddressKey(item.Id))">Allow domain @domain</button> }
             @if (SenderDomain(item.Sender) is { } blockedDomain) { <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(blockedDomain, RuleMatchType.SenderDomain)">Block domain @blockedDomain</button> }
         </div>
         </article>
@@ -41,7 +41,7 @@ else
         @foreach (var sender in group.Senders) {
             <select value="@RetentionValue(GroupAddressKey(group.Value, sender))" @onchange="e => SetRetention(GroupAddressKey(group.Value, sender), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(sender, RuleMatchType.ExactSender, GroupAddressKey(group.Value, sender))">Allow sender @sender</button>
             <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(sender, RuleMatchType.ExactSender)">Block sender @sender</button>
-            @if (SenderDomain(sender) is { } domain) { <select value="@RetentionValue(GroupDomainKey(group.Value, sender))" @onchange="e => SetRetention(GroupDomainKey(group.Value, sender), e.Value?.ToString())" aria-label="Destination retention"><option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option></select><button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, GroupDomainKey(group.Value, sender))">Allow domain @domain</button> }
+            @if (SenderDomain(sender) is { } domain) { <button type="button" class="btn btn-sm btn-outline-success mt-2" @onclick="() => AllowAsync(domain, RuleMatchType.SenderDomain, GroupAddressKey(group.Value, sender))">Allow domain @domain</button> }
             @if (SenderDomain(sender) is { } blockedDomain) { <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="() => BlockAsync(blockedDomain, RuleMatchType.SenderDomain)">Block domain @blockedDomain</button> }
         }
     </div></article> }
@@ -91,8 +91,6 @@ else
     private string RetentionValue(string key) => _retention.GetValueOrDefault(key)?.ToString() ?? string.Empty;
     private void SetRetention(string key, string? value) => _retention[key] = int.TryParse(value, out var days) ? days : null;
     private static string AddressKey(Guid id) => $"address:{id:N}";
-    private static string DomainKey(Guid id) => $"domain:{id:N}";
     private static string GroupAddressKey(string group, string sender) => $"group-address:{group}:{sender}";
-    private static string GroupDomainKey(string group, string sender) => $"group-domain:{group}:{sender}";
     private static string? SenderDomain(string sender) { var at = sender.LastIndexOf('@'); return at > 0 && at < sender.Length - 1 ? sender[(at + 1)..] : null; }
 }
