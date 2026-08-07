@@ -49,6 +49,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuleManagementService, RuleManagementService>();
         services.AddScoped<IMessageReviewService, MessageReviewService>();
         services.AddScoped<IMessageDeliveryService, MessageDeliveryService>();
+        services.AddScoped<IBlockedMessageDeletionService, BlockedMessageDeletionService>();
         services.AddScoped<IAdministrationService, AdministrationService>();
         services.AddScoped<IAuditRecorder>(provider => provider.GetRequiredService<IAdministrationService>());
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();

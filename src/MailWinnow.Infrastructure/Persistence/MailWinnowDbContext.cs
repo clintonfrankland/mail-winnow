@@ -53,9 +53,11 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.Property(x => x.From).HasMaxLength(2000);
             entity.Property(x => x.To).HasMaxLength(2000);
             entity.Property(x => x.Subject).HasMaxLength(2000);
+            entity.Property(x => x.BlockedSourceDeletionError).HasMaxLength(512);
             entity.Property(x => x.EvaluationOutcome)
                 .HasDefaultValue(RuleOutcome.Pending);
             entity.HasIndex(x => new { x.SourceMailboxId, x.FolderName, x.UidValidity, x.Uid }).IsUnique();
+            entity.HasIndex(x => new { x.EvaluationOutcome, x.BlockedSourceDeletedUtc, x.BlockedSourceDeletionStartedUtc });
         });
         builder.Entity<MailRule>(entity =>
         {

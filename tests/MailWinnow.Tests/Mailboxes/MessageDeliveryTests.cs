@@ -37,6 +37,18 @@ public sealed class MessageDeliveryTests
     }
 
     [Fact]
+    public async Task HeaderAlreadyDeletedByBlockRuleCannotBeQueuedForDelivery()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Header.BlockedSourceDeletedUtc = DateTimeOffset.UtcNow;
+        await f.Db.SaveChangesAsync();
+
+        await f.Service.QueueApprovedAsync("owner", f.Header.Id);
+
+        Assert.Empty(await f.Db.MessageDeliveries.ToListAsync());
+    }
+
+    [Fact]
     public async Task Concurrent_service_scopes_claim_a_delivery_atomically_before_appending()
     {
         await using var f = await Fixture.CreateAsync();

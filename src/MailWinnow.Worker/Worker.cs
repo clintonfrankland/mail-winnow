@@ -41,6 +41,22 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
                         logger.LogWarning(exception, "Header synchronization failed for source mailbox {MailboxId}", id);
                     }
                 });
+                await using (var blockedScope = scopes.CreateAsyncScope())
+                {
+                    var blockedIds = await blockedScope.ServiceProvider.GetRequiredService<IBlockedMessageDeletionService>().GetDueHeaderIdsAsync(stoppingToken);
+                    await Parallel.ForEachAsync(blockedIds, new ParallelOptions { MaxDegreeOfParallelism = maximumConcurrency, CancellationToken = stoppingToken }, async (id, token) =>
+                    {
+                        try
+                        {
+                            await using var scope = scopes.CreateAsyncScope();
+                            await scope.ServiceProvider.GetRequiredService<IBlockedMessageDeletionService>().DeleteAsync(id, token);
+                        }
+                        catch (Exception exception) when (!token.IsCancellationRequested)
+                        {
+                            logger.LogWarning(exception, "Blocked source deletion failed for header {HeaderId}", id);
+                        }
+                    });
+                }
                 await using var deliveryScope = scopes.CreateAsyncScope();
                 var deliveryIds = await deliveryScope.ServiceProvider.GetRequiredService<IMessageDeliveryService>().GetDueDeliveryIdsAsync(stoppingToken);
                 await Parallel.ForEachAsync(deliveryIds, new ParallelOptions { MaxDegreeOfParallelism = maximumConcurrency, CancellationToken = stoppingToken }, async (id, token) =>

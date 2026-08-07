@@ -17,6 +17,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("Approve these messages", source);
         Assert.Contains("Allow from address @item.Sender", source);
         Assert.Contains("Allow from domain @domain", source);
+        Assert.Contains("Block sender @item.Sender", source);
+        Assert.Contains("Block domain @blockedDomain", source);
         Assert.Contains("action=\"/review/messages/approve\"", source);
         Assert.Contains("href=\"/rules\">Manage rules", source);
         Assert.Contains("[SupplyParameterFromQuery(Name = \"outcome\")] public string? OutcomeQuery", source);
@@ -32,6 +34,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("@page \"/rules\"", source);
         Assert.Contains("@attribute [Authorize]", source);
         Assert.Contains("Create rule", source);
+        Assert.Contains("<option value=\"ExactSender\">Exact sender address</option>", source);
+        Assert.Contains("<option value=\"SenderDomain\">Sender domain</option>", source);
+        Assert.Contains("<option value=\"PermanentlyBlock\">Always block</option>", source);
         Assert.Contains("Edit rule", source);
         Assert.Contains("Save changes", source);
         Assert.Contains("Remove rule", source);

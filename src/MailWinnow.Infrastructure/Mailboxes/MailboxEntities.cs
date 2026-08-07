@@ -49,6 +49,9 @@ public sealed class SourceMessageHeader
     public DateTimeOffset ReceivedUtc { get; set; }
     public RuleOutcome EvaluationOutcome { get; set; } = RuleOutcome.Pending;
     public DateTimeOffset? EvaluatedUtc { get; set; }
+    public DateTimeOffset? BlockedSourceDeletionStartedUtc { get; set; }
+    public DateTimeOffset? BlockedSourceDeletedUtc { get; set; }
+    public string? BlockedSourceDeletionError { get; set; }
 }
 
 public sealed class DestinationMailbox

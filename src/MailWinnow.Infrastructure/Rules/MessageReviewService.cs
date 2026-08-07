@@ -79,7 +79,15 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
         var retention = applied?.DeliveredMessageRetentionDays is { } days
             ? $"Destination retention: {days} days"
             : "Destination retention: forever";
-        var deliveryStatus = delivery is null ? evaluation.Outcome switch { RuleOutcome.Allow => "Eligible for local delivery", RuleOutcome.Block => "Withheld from local delivery", _ => "Awaiting review; not locally delivered" } :
+        var deliveryStatus = delivery is null ? evaluation.Outcome switch
+        {
+            RuleOutcome.Allow when header.BlockedSourceDeletedUtc is not null => "Previously deleted from source by a block rule; not deliverable",
+            RuleOutcome.Allow => "Eligible for local delivery",
+            RuleOutcome.Block when header.BlockedSourceDeletedUtc is not null => "Deleted from source; not locally delivered",
+            RuleOutcome.Block when header.BlockedSourceDeletionError is not null => "Source deletion failed; automatic retry pending",
+            RuleOutcome.Block => "Queued for source deletion; not locally delivered",
+            _ => "Awaiting review; not locally delivered"
+        } :
             delivery.State == MessageDeliveryState.Failed ? $"Failed during {delivery.LastFailureStage}; retry available" : delivery.State.ToString();
         return new(header.Id, header.From ?? "(unknown sender)", header.Subject ?? "(no subject)", source.DisplayName, header.ReceivedUtc,
             $"Source: {source.PollingStatus ?? (source.Enabled ? "enabled" : "disabled")}", evaluation.Outcome, deliveryStatus, ruleContext, retention, delivery?.Id);

@@ -97,6 +97,8 @@ Allow rules default to keeping the moved destination message forever. The review
 
 Authenticated users manage reusable allow/block rules on `/rules`. The page supports creating, editing, and removing rules, including action, match type/value, and destination retention. Message Review links to this page instead of duplicating the rule-management interface.
 
+Block rules support exact sender addresses and sender domains. Synchronization still catalogs RFC headers for every discovered message in selected source folders. Messages whose final rule outcome is Block are never appended to the destination; the Worker deletes and UID-expunges their exact source UID under the cataloged UIDVALIDITY. Block deletion has a database-backed stale-claim guard, records sanitized failures, and retries without fetching or persisting the message body. Message Review exposes Block sender and Block domain actions in Recent, By sender, and By subject views.
+
 Build and start an environment from its Home Helm-managed env file without printing its contents:
 
 ```sh

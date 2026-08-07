@@ -32,6 +32,7 @@ public sealed class MessageDeliveryService(
     {
         var header = await OwnedHeaderAsync(ownerUserId, headerId, cancellationToken);
         if (header.EvaluationOutcome != RuleOutcome.Allow) return;
+        if (header.BlockedSourceDeletedUtc is not null) return; // a completed block deletion is intentionally irreversible.
         var delivery = await db.MessageDeliveries.SingleOrDefaultAsync(x => x.SourceMessageHeaderId == headerId, cancellationToken);
         if (delivery is null)
         {
