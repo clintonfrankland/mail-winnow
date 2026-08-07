@@ -14,20 +14,34 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("aria-label=\"Review view\"", source);
         Assert.Contains("role=\"alert\"", source);
         Assert.Contains("role=\"status\"", source);
-        Assert.Contains("<label for=\"retention-@rule.Id\">Destination retention</label>", source);
-        Assert.Contains("<label for=\"domain-rule\">", source);
-        Assert.Contains("<option value=\"\">Forever</option>", source);
-        Assert.Contains("<option value=\"30\">1 month</option>", source);
-        Assert.Contains("<option value=\"7\">1 week</option>", source);
-        Assert.Contains("<option value=\"3\">3 days</option>", source);
-        Assert.Contains("<option value=\"1\">1 day</option>", source);
         Assert.Contains("Approve these messages", source);
         Assert.Contains("Allow from address @item.Sender", source);
         Assert.Contains("Allow from domain @domain", source);
         Assert.Contains("action=\"/review/messages/approve\"", source);
-        Assert.Contains("Replace rule", source);
+        Assert.Contains("href=\"/rules\">Manage rules", source);
         Assert.Contains("[SupplyParameterFromQuery(Name = \"outcome\")] public string? OutcomeQuery", source);
         Assert.DoesNotContain("[SupplyParameterFromQuery] public RuleOutcome? Outcome", source);
+    }
+
+    [Fact]
+    public void RulesPageProvidesCreateEditRemoveAndRetentionControls()
+    {
+        var source = File.ReadAllText(FindPage("Rules.razor"));
+        var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
+
+        Assert.Contains("@page \"/rules\"", source);
+        Assert.Contains("@attribute [Authorize]", source);
+        Assert.Contains("Create rule", source);
+        Assert.Contains("Edit rule", source);
+        Assert.Contains("Save changes", source);
+        Assert.Contains("Remove rule", source);
+        Assert.Contains("returnUrl=/rules", source);
+        Assert.Contains("<option value=\"\" selected=\"@(selected is null)\">Forever</option>", source);
+        Assert.Contains("<option value=\"30\" selected=\"@(selected == 30)\">1 month</option>", source);
+        Assert.Contains("<option value=\"7\" selected=\"@(selected == 7)\">1 week</option>", source);
+        Assert.Contains("<option value=\"3\" selected=\"@(selected == 3)\">3 days</option>", source);
+        Assert.Contains("<option value=\"1\" selected=\"@(selected == 1)\">1 day</option>", source);
+        Assert.Contains("href=\"rules\"", navigation);
     }
 
     [Theory]
@@ -40,13 +54,15 @@ public sealed class ReviewDashboardAccessibilityTests
     public void OutcomeQueryIsParsedSafely(string? value, RuleOutcome? expected) =>
         Assert.Equal(expected, ReviewQueryParser.ParseOutcome(value));
 
-    private static string FindReviewPage()
+    private static string FindReviewPage() => FindPage("Review.razor");
+
+    private static string FindPage(string relativePath)
     {
         for (var current = new DirectoryInfo(AppContext.BaseDirectory); current is not null; current = current.Parent)
         {
-            var candidate = Path.Combine(current.FullName, "src", "MailWinnow.Web", "Components", "Pages", "Review.razor");
+            var candidate = Path.GetFullPath(Path.Combine(current.FullName, "src", "MailWinnow.Web", "Components", "Pages", relativePath));
             if (File.Exists(candidate)) return candidate;
         }
-        throw new FileNotFoundException("Review.razor was not found from the test output directory.");
+        throw new FileNotFoundException($"{relativePath} was not found from the test output directory.");
     }
 }

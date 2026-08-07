@@ -95,6 +95,8 @@ LocalImap__AllowInvalidCertificate=false
 
 Allow rules default to keeping the moved destination message forever. The review UI also offers destination retention of 30 days (shown as 1 month), 7 days, 3 days, or 1 day. One-message approvals use the Forever default. Retention never authorizes deleting the source before the destination append is confirmed.
 
+Authenticated users manage reusable allow/block rules on `/rules`. The page supports creating, editing, and removing rules, including action, match type/value, and destination retention. Message Review links to this page instead of duplicating the rule-management interface.
+
 Build and start an environment from its Home Helm-managed env file without printing its contents:
 
 ```sh

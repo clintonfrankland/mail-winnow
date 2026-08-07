@@ -26,21 +26,21 @@ public static class ReviewEndpoints
         {
             var owner = ownership.RequireCurrentUserId(context.User);
             DateTimeOffset? expiry = request.Action == RuleAction.TemporarilyAllow ? request.ExpiresUtc ?? DateTimeOffset.UtcNow.AddDays(7) : null;
-            var rule = new MailRule { OwnerUserId = owner, Action = request.Action, Scope = RuleScope.User, MatchType = request.MatchType, MatchValue = request.MatchValue.Trim(), EffectiveUtc = expiry is null ? null : DateTimeOffset.UtcNow, ExpiresUtc = expiry, DeliveredMessageRetentionDays = request.RetentionDays };
+            var rule = new MailRule { OwnerUserId = owner, Action = request.Action, Scope = request.Scope, MatchType = request.MatchType, MatchValue = request.MatchValue.Trim(), SourceMailboxId = request.SourceMailboxId, EffectiveUtc = expiry is null ? null : DateTimeOffset.UtcNow, ExpiresUtc = expiry, DeliveredMessageRetentionDays = request.RetentionDays };
             if (request.ReplaceRuleId is { } replaceRuleId)
             {
                 await rules.ReplaceAsync(owner, replaceRuleId, rule, ct);
-                return Redirect("Rule replaced and matching stored messages refreshed.");
+                return Redirect(context, "Rule updated and matching stored messages refreshed.");
             }
             await rules.AddOrUpdateAsync(rule, ct);
-            return Redirect("Decision applied to matching stored messages.");
+            return Redirect(context, "Rule created and matching stored messages refreshed.");
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Redirect(ex.Message, true); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Redirect(context, ex.Message, true); }
     }
     private static async Task<IResult> DeleteRuleAsync(HttpContext context, [FromForm] RuleIdRequest request, IRuleManagementService rules, IOwnershipAuthorizer ownership, CancellationToken ct)
     {
-        try { await rules.DeleteAsync(ownership.RequireCurrentUserId(context.User), request.Id, ct); return Redirect("Rule removed and stored messages refreshed."); }
-        catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
+        try { await rules.DeleteAsync(ownership.RequireCurrentUserId(context.User), request.Id, ct); return Redirect(context, "Rule removed and stored messages refreshed."); }
+        catch (InvalidOperationException ex) { return Redirect(context, ex.Message, true); }
     }
     private static async Task<IResult> ApproveAsync(HttpContext context, [FromForm] HeaderRequest request, IRuleManagementService rules, IOwnershipAuthorizer ownership, CancellationToken ct)
     {
@@ -74,7 +74,22 @@ public static class ReviewEndpoints
         catch (InvalidOperationException ex) { return Redirect(ex.Message, true); }
     }
     private static IResult Redirect(string message, bool error = false) => Results.LocalRedirect("/review?" + (error ? "error=" : "saved=") + Uri.EscapeDataString(message));
-    public sealed record RuleRequest(RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int? RetentionDays = null, Guid? ReplaceRuleId = null);
+    private static IResult Redirect(HttpContext context, string message, bool error = false)
+    {
+        var path = string.Equals(context.Request.Query["returnUrl"], "/rules", StringComparison.Ordinal) ? "/rules" : "/review";
+        return Results.LocalRedirect(path + "?" + (error ? "error=" : "saved=") + Uri.EscapeDataString(message));
+    }
+    public sealed class RuleRequest
+    {
+        public RuleAction Action { get; set; }
+        public RuleScope Scope { get; set; } = RuleScope.User;
+        public RuleMatchType MatchType { get; set; }
+        public string MatchValue { get; set; } = string.Empty;
+        public Guid? SourceMailboxId { get; set; }
+        public DateTimeOffset? ExpiresUtc { get; set; }
+        public int? RetentionDays { get; set; }
+        public Guid? ReplaceRuleId { get; set; }
+    }
     public sealed record RuleIdRequest(Guid Id);
     public sealed record HeaderRequest(Guid Id);
     public sealed class HeaderBatchRequest { public List<Guid> Ids { get; set; } = []; }

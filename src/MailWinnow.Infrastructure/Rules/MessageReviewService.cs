@@ -12,7 +12,8 @@ public sealed record MessageReviewItem(Guid Id, string Sender, string Subject, s
     string SourceStatus, RuleOutcome Outcome, string DeliveryStatus, string RuleContext, string RetentionContext, Guid? DeliveryId = null);
 public sealed record MessageReviewGroup(string Value, int Count, DateTimeOffset MostRecentUtc, IReadOnlyList<Guid> MessageIds,
     IReadOnlyList<string> Senders, IReadOnlyList<string> Samples, IReadOnlyList<string> RuleContexts);
-public sealed record ReviewRule(Guid Id, RuleAction Action, RuleMatchType MatchType, string MatchValue, DateTimeOffset? ExpiresUtc, int? RetentionDays);
+public sealed record ReviewRule(Guid Id, RuleAction Action, RuleScope Scope, RuleMatchType MatchType, string MatchValue,
+    Guid? SourceMailboxId, DateTimeOffset? ExpiresUtc, int? RetentionDays, DateTimeOffset CreatedUtc);
 
 public interface IMessageReviewService
 {
@@ -58,7 +59,8 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
     {
         var owner = ownership.RequireCurrentUserId(user);
         return await db.MailRules.Where(x => x.OwnerUserId == owner).OrderByDescending(x => x.CreatedUtc)
-            .Select(x => new ReviewRule(x.Id, x.Action, x.MatchType, x.MatchValue, x.ExpiresUtc, x.DeliveredMessageRetentionDays)).ToListAsync(cancellationToken);
+            .Select(x => new ReviewRule(x.Id, x.Action, x.Scope, x.MatchType, x.MatchValue, x.SourceMailboxId,
+                x.ExpiresUtc, x.DeliveredMessageRetentionDays, x.CreatedUtc)).ToListAsync(cancellationToken);
     }
 
     private static IReadOnlyList<MessageReviewGroup> GroupAsync(IReadOnlyList<MessageReviewItem> items, Func<MessageReviewItem, string> key) => items

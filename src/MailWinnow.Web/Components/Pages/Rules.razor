@@ -1,0 +1,57 @@
+@page "/rules"
+@attribute [Authorize]
+@inject IMessageReviewService ReviewService
+
+<PageTitle>Rules</PageTitle>
+<header class="page-heading"><div class="eyebrow">Automatic decisions</div><h1>Rules</h1><p>Control which messages move to your destination mailbox and how long they stay there.</p></header>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
+@if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
+
+<details class="card section-card mb-3">
+    <summary class="btn btn-primary">Create rule</summary>
+    <form method="post" action="/review/rule?returnUrl=/rules" class="form-stack mt-3">
+        <AntiforgeryToken />
+        <label for="new-match-type">Match</label>
+        <select id="new-match-type" class="form-select" name="MatchType"><option value="ExactSender">Exact sender address</option><option value="SenderDomain">Sender domain</option><option value="NormalizedExactSubject">Exact subject</option><option value="SubjectContains">Subject contains</option></select>
+        <label for="new-match-value">Value</label><input id="new-match-value" class="form-control" name="MatchValue" required />
+        <label for="new-action">Action</label>
+        <select id="new-action" class="form-select" name="Action"><option value="PermanentlyAllow">Always allow</option><option value="TemporarilyAllow">Allow for 7 days</option><option value="PermanentlyBlock">Always block</option></select>
+        <label for="new-retention">Destination retention</label>@RetentionSelect("new-retention", null)
+        <button class="btn btn-primary" type="submit">Create rule</button>
+    </form>
+</details>
+
+<div class="section-header"><div><h2>Existing rules</h2><p class="text-body-secondary mb-0">@_rules.Count active reusable decision@(_rules.Count == 1 ? "" : "s").</p></div></div>
+@if (_rules.Count == 0) { <div class="empty-state">No reusable rules have been created yet.</div> }
+<div class="stack">
+@foreach (var rule in _rules)
+{
+    <article class="card section-card">
+        <div class="review-card-header"><div><strong>@ActionLabel(rule.Action)</strong><div class="review-meta">@MatchLabel(rule.MatchType) · @rule.MatchValue</div></div><span class="pill">@(rule.ExpiresUtc?.ToString("u") ?? "Permanent")</span></div>
+        <p class="small text-body-secondary">Destination retention: @RetentionLabel(rule.RetentionDays) · Created @rule.CreatedUtc.ToString("u")</p>
+        <details><summary class="btn btn-sm btn-outline-secondary">Edit rule</summary>
+            <form method="post" action="/review/rule?returnUrl=/rules" class="form-stack mt-3">
+                <AntiforgeryToken /><input type="hidden" name="ReplaceRuleId" value="@rule.Id" /><input type="hidden" name="Scope" value="@rule.Scope" />@if (rule.SourceMailboxId is { } sourceId) { <input type="hidden" name="SourceMailboxId" value="@sourceId" /> }
+                <label for="match-type-@rule.Id">Match</label><select id="match-type-@rule.Id" class="form-select" name="MatchType">@foreach (var type in Enum.GetValues<RuleMatchType>()) { <option value="@type" selected="@(rule.MatchType == type)">@MatchLabel(type)</option> }</select>
+                <label for="match-value-@rule.Id">Value</label><input id="match-value-@rule.Id" class="form-control" name="MatchValue" value="@rule.MatchValue" required />
+                <label for="action-@rule.Id">Action</label><select id="action-@rule.Id" class="form-select" name="Action"><option value="PermanentlyAllow" selected="@(rule.Action == RuleAction.PermanentlyAllow)">Always allow</option><option value="TemporarilyAllow" selected="@(rule.Action == RuleAction.TemporarilyAllow)">Allow for 7 days</option><option value="PermanentlyBlock" selected="@(rule.Action == RuleAction.PermanentlyBlock)">Always block</option></select>
+                <label for="retention-@rule.Id">Destination retention</label>@RetentionSelect($"retention-{rule.Id}", rule.RetentionDays)
+                <button class="btn btn-primary" type="submit">Save changes</button>
+            </form>
+        </details>
+        <form method="post" action="/review/rule/delete?returnUrl=/rules" class="mt-2"><AntiforgeryToken /><input type="hidden" name="Id" value="@rule.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">Remove rule</button></form>
+    </article>
+}
+</div>
+
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? Saved { get; set; }
+    private IReadOnlyList<ReviewRule> _rules = [];
+    protected override async Task OnInitializedAsync() => _rules = await ReviewService.GetRulesAsync(HttpContext.User);
+    private static string ActionLabel(RuleAction action) => action switch { RuleAction.PermanentlyAllow => "Always allow", RuleAction.TemporarilyAllow => "Temporary allow", RuleAction.PermanentlyBlock => "Always block", _ => action.ToString() };
+    private static string MatchLabel(RuleMatchType type) => type switch { RuleMatchType.ExactSender => "Exact sender address", RuleMatchType.SenderDomain => "Sender domain", RuleMatchType.NormalizedExactSubject => "Exact subject", RuleMatchType.SubjectContains => "Subject contains", _ => type.ToString() };
+    private static string RetentionLabel(int? days) => days switch { null => "Forever", 30 => "1 month", 7 => "1 week", 3 => "3 days", 1 => "1 day", _ => $"{days} days" };
+    private static RenderFragment RetentionSelect(string id, int? selected) => @<select id="@id" class="form-select" name="RetentionDays"><option value="" selected="@(selected is null)">Forever</option><option value="30" selected="@(selected == 30)">1 month</option><option value="7" selected="@(selected == 7)">1 week</option><option value="3" selected="@(selected == 3)">3 days</option><option value="1" selected="@(selected == 1)">1 day</option></select>;
+}
