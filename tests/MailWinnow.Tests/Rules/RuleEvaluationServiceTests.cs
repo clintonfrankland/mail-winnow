@@ -129,6 +129,22 @@ public sealed class RuleEvaluationServiceTests
         Assert.Equal(["first@example.test", "second@example.test"], group.Senders);
     }
 
+    [Fact]
+    public async Task GroupedReviewQueriesSortLargestMessageCountFirst()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.AddHeaderAsync("owner", "small@example.test", "Small group");
+        await fixture.AddHeaderAsync("owner", "large@example.test", "First");
+        await fixture.AddHeaderAsync("owner", "large@example.test", "Second");
+        await fixture.AddHeaderAsync("owner", "large@example.test", "Third");
+        var review = new MessageReviewService(fixture.Db, new OwnershipAuthorizer());
+
+        var groups = await review.GetBySenderAsync(Principal("owner"), new MessageReviewFilter(null, null, null));
+
+        Assert.Equal([3, 1], groups.Select(x => x.Count));
+        Assert.Equal(["large@example.test", "small@example.test"], groups.Select(x => x.Value));
+    }
+
     private static ClaimsPrincipal Principal(string userId) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId)], "Test"));
 
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db) : IAsyncDisposable

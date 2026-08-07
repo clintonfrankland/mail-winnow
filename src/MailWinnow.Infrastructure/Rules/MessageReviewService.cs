@@ -62,7 +62,7 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
     }
 
     private static IReadOnlyList<MessageReviewGroup> GroupAsync(IReadOnlyList<MessageReviewItem> items, Func<MessageReviewItem, string> key) => items
-        .GroupBy(key).OrderByDescending(x => x.Max(i => i.ReceivedUtc)).Select(group => new MessageReviewGroup(
+        .GroupBy(key).OrderByDescending(x => x.Count()).ThenByDescending(x => x.Max(i => i.ReceivedUtc)).Select(group => new MessageReviewGroup(
             group.Key, group.Count(), group.Max(x => x.ReceivedUtc), group.Select(x => x.Id).ToList(),
             group.Select(x => x.Sender).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList(),
             group.OrderByDescending(x => x.ReceivedUtc).Take(3).Select(x => x.Subject).ToList(),
