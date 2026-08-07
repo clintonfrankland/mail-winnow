@@ -28,6 +28,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("@rendermode InteractiveServer", source);
         Assert.Contains("@onclick=\"() => ApproveAsync(group.MessageIds)\"", source);
         Assert.Contains("@onclick=\"() => BlockAsync(item.Sender, RuleMatchType.ExactSender)\"", source);
+        Assert.Contains("@onclick='() => SwitchViewAsync(\"sender\")'", source);
+        Assert.Contains("private async Task SwitchViewAsync(string view) { View = view; await ReloadAsync(); }", source);
         Assert.Contains("await ReloadAsync();", source);
         Assert.DoesNotContain("action=\"/review/messages/approve\"", source);
         Assert.Contains("href=\"/rules\">Manage rules", source);

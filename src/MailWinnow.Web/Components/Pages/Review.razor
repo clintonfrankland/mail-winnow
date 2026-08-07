@@ -18,7 +18,7 @@
     <button class="btn btn-primary">Apply filters</button>
 </form>
 
-<nav class="tabs mb-3" aria-label="Review view"><a class="btn @(View == "recent" ? "btn-primary" : "btn-outline-primary")" href="@Link("recent")">Recent</a><a class="btn @(View == "sender" ? "btn-primary" : "btn-outline-primary")" href="@Link("sender")">By sender</a><a class="btn @(View == "subject" ? "btn-primary" : "btn-outline-primary")" href="@Link("subject")">By subject</a></nav>
+<nav class="tabs mb-3" aria-label="Review view"><button type="button" class="btn @(View == "recent" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchViewAsync("recent")'>Recent</button><button type="button" class="btn @(View == "sender" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchViewAsync("sender")'>By sender</button><button type="button" class="btn @(View == "subject" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SwitchViewAsync("subject")'>By subject</button></nav>
 
 @if (View == "recent")
 {
@@ -65,6 +65,7 @@ else
     private readonly Dictionary<string, int?> _retention = [];
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; View = View?.ToLowerInvariant() is "sender" or "subject" ? View.ToLowerInvariant() : "recent"; await ReloadAsync(); }
+    private async Task SwitchViewAsync(string view) { View = view; await ReloadAsync(); }
     private async Task ReloadAsync() { var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(User); _recent = await ReviewService.GetRecentAsync(User, filter); _senders = View == "sender" ? await ReviewService.GetBySenderAsync(User, filter) : []; _subjects = View == "subject" ? await ReviewService.GetBySubjectAsync(User, filter) : []; }
     private async Task BlockAsync(string matchValue, RuleMatchType matchType)
     {
@@ -101,6 +102,5 @@ else
     private static string DomainKey(Guid id) => $"domain:{id:N}";
     private static string GroupAddressKey(string group, string sender) => $"group-address:{group}:{sender}";
     private static string GroupDomainKey(string group, string sender) => $"group-domain:{group}:{sender}";
-    private string Link(string view) => $"/review?view={view}&sourceMailboxId={SourceMailboxId}&search={Uri.EscapeDataString(Search ?? string.Empty)}";
     private static string? SenderDomain(string sender) { var at = sender.LastIndexOf('@'); return at > 0 && at < sender.Length - 1 ? sender[(at + 1)..] : null; }
 }
