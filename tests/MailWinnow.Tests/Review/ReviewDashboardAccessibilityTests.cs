@@ -35,7 +35,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("@item.Outcome", source);
         Assert.Contains("<strong>Subjects:</strong>", source);
         Assert.Contains("<strong>Senders:</strong>", source);
-        Assert.Contains("@group.Count messages", source);
+        Assert.Contains("review-meta review-count", source);
+        Assert.Contains("group.Count == 1 ? \"message\" : \"messages\"", source);
+        Assert.DoesNotContain("<span class=\"pill\">@group.Count", source);
         Assert.Contains("Newest @group.MostRecentUtc", source);
         Assert.Contains(">Allow sender</button>", actions);
         Assert.Contains(">Allow domain</button>", actions);
