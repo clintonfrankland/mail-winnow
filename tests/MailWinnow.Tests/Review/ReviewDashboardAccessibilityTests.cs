@@ -64,6 +64,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("\"Blocking…\"", actions);
         Assert.Contains("\"Deleting…\"", actions);
         Assert.Contains("aria-label=\"Target sender\"", actions);
+        Assert.Contains("class=\"decision-target-sender\"", actions);
+        Assert.Contains("class=\"decision-retention\"", actions);
         Assert.Contains("private int? _retentionDays = 1;", actions);
         Assert.Contains("role=\"menu\"", actions);
         Assert.Contains("_menuOpen = false;", actions);
@@ -79,6 +81,11 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("name=\"outcome\"", source);
         Assert.Contains("RuleOutcome.Pending", source);
         Assert.Contains("Messages disappear after a matching sender or domain rule handles them.", source);
+
+        var mobileStyles = File.ReadAllText(FindPage(Path.Combine("..", "..", "wwwroot", "mobile.css")));
+        Assert.Contains(".decision-rule-row>.decision-retention{flex:0 0 110px;height:48px;min-height:48px;max-width:110px", mobileStyles);
+        Assert.Contains(".split-action-primary,.split-action-toggle{height:48px;min-height:48px}", mobileStyles);
+        Assert.Contains(".split-action-toggle{flex:0 0 48px;min-width:48px", mobileStyles);
 
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
         Assert.Contains("@_messageCount pending messages", navigation);

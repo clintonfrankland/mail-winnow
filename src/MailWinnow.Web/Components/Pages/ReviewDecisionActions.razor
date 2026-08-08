@@ -1,11 +1,11 @@
 <div class="decision-rule-row" aria-busy="@_busy">
     @if (Senders.Count > 1)
     {
-        <select @bind="_selectedSender" aria-label="Target sender" disabled="@_busy">
+        <select class="decision-target-sender" @bind="_selectedSender" aria-label="Target sender" disabled="@_busy">
             @foreach (var sender in Senders) { <option value="@sender">@sender</option> }
         </select>
     }
-    <select @bind="_retentionDays" aria-label="Destination retention" disabled="@_busy">
+    <select class="decision-retention" @bind="_retentionDays" aria-label="Destination retention" disabled="@_busy">
         <option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option>
     </select>
     <div class="split-action">
