@@ -109,6 +109,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("margin-top:auto", navigationStyles);
         Assert.Contains("class=\"app-version\"", navigation);
         Assert.Contains("typeof(Program).Assembly.GetName().Version", navigation);
+        Assert.Contains(">v@(AppVersion)</div>", navigation);
+        Assert.DoesNotContain(">v@AppVersion</div>", navigation);
         Assert.True(navigation.IndexOf("class=\"app-version\"", StringComparison.Ordinal) < navigation.IndexOf("> Sign out</button>", StringComparison.Ordinal));
         Assert.Contains(".app-version", navigationStyles);
     }
