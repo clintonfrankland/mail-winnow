@@ -26,7 +26,7 @@
     @foreach (var item in _recent)
     {
         <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender</div><div class="review-meta">Newest @item.ReceivedUtc.ToString("u")</div></div></div><div class="decision-actions">
-            <ReviewDecisionActions Sender="@item.Sender" MessageIds="@(new[] { item.Id })" OnDecision="ApplyDecisionAsync" />
+            <ReviewDecisionActions Senders="@(new[] { item.Sender })" MessageIds="@(new[] { item.Id })" OnDecision="ApplyDecisionAsync" />
         </div>
         </article>
     }
@@ -35,7 +35,7 @@ else
 {
     var groups = View == "sender" ? _senders : _subjects;
     @foreach (var group in groups) { <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@group.Value</h2>@if (View == "sender") { <div class="review-meta"><strong>Subjects:</strong> @string.Join("; ", group.Samples)</div> } else { <div class="review-meta"><strong>Senders:</strong> @string.Join("; ", group.Senders)</div> }<div class="review-meta">Newest @group.MostRecentUtc.ToString("u")</div></div><span class="pill">@group.Count messages</span></div><div class="decision-actions">
-        @foreach (var sender in group.Senders) { <ReviewDecisionActions Sender="@sender" MessageIds="@group.MessageIds" OnDecision="ApplyDecisionAsync" /> }
+        <ReviewDecisionActions Senders="@group.Senders" MessageIds="@group.MessageIds" OnDecision="ApplyDecisionAsync" />
     </div></article> }
 }
 

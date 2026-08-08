@@ -1,4 +1,10 @@
 <div class="decision-rule-row">
+    @if (Senders.Count > 1)
+    {
+        <select @bind="_selectedSender" aria-label="Target sender">
+            @foreach (var sender in Senders) { <option value="@sender">@sender</option> }
+        </select>
+    }
     <select @bind="_retentionDays" aria-label="Destination retention">
         <option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option>
     </select>
@@ -20,12 +26,18 @@
 </div>
 
 @code {
-    [Parameter, EditorRequired] public string Sender { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<string> Senders { get; set; } = [];
     [Parameter, EditorRequired] public EventCallback<ReviewDecisionRequest> OnDecision { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<Guid> MessageIds { get; set; } = [];
     private int? _retentionDays;
     private bool _menuOpen;
+    private string _selectedSender = string.Empty;
+    private string Sender => _selectedSender;
     private string? Domain { get { var at = Sender.LastIndexOf('@'); return at > 0 && at < Sender.Length - 1 ? Sender[(at + 1)..] : null; } }
+    protected override void OnParametersSet()
+    {
+        if (!Senders.Contains(_selectedSender, StringComparer.OrdinalIgnoreCase)) _selectedSender = Senders.FirstOrDefault() ?? string.Empty;
+    }
     private async Task AllowSenderAsync() => await DecideAsync(RuleAction.PermanentlyAllow, RuleMatchType.ExactSender, Sender);
     private async Task DeleteAsync() => await DecideAsync(RuleAction.DeleteOneMessage, RuleMatchType.ExactSender, Sender);
     private void ToggleMenu() => _menuOpen = !_menuOpen;

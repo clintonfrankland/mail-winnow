@@ -23,7 +23,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("role=\"status\"", source);
         Assert.DoesNotContain("Approve this message", source);
         Assert.DoesNotContain("Approve these messages", source);
-        Assert.Contains("<ReviewDecisionActions Sender=\"@item.Sender\"", source);
+        Assert.Contains("<ReviewDecisionActions Senders=\"@(new[] { item.Sender })\"", source);
+        Assert.Contains("<ReviewDecisionActions Senders=\"@group.Senders\"", source);
+        Assert.DoesNotContain("@foreach (var sender in group.Senders) { <ReviewDecisionActions", source);
         Assert.DoesNotContain("<strong>Source</strong>", source);
         Assert.DoesNotContain("<strong>Local delivery</strong>", source);
         Assert.DoesNotContain("<strong>Rule</strong>", source);
@@ -42,6 +44,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains(">Delete</button>", actions);
         Assert.Contains("aria-label=\"More decisions\"", actions);
         Assert.Contains("aria-expanded=\"@_menuOpen\"", actions);
+        Assert.Contains("aria-label=\"Target sender\"", actions);
         Assert.Contains("role=\"menu\"", actions);
         Assert.Contains("_menuOpen = false;", actions);
         Assert.DoesNotContain("@Sender</button>", actions);
