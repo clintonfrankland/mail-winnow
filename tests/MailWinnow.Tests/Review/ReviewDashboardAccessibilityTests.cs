@@ -76,7 +76,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("Messages disappear after a matching sender or domain rule handles them.", source);
 
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        Assert.Contains("<SidebarCount Kind=\"recent\" />", navigation);
+        Assert.Contains("@_messageCount pending messages", navigation);
         Assert.DoesNotContain("> Message review</NavLink>", navigation);
     }
 
@@ -84,7 +84,6 @@ public sealed class ReviewDashboardAccessibilityTests
     public void NavigationIsMailFocusedOrderedAndShowsReviewCounts()
     {
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        var counts = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "SidebarCount.razor")));
         var navigationStyles = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor.css")));
 
         Assert.DoesNotContain("Workspace", navigation);
@@ -98,13 +97,14 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.True(navigation.IndexOf("Review - Sender", StringComparison.Ordinal) < navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Sign out</button>", StringComparison.Ordinal));
-        Assert.Contains("<SidebarCount Kind=\"inbox\" />", navigation);
-        Assert.Contains("<SidebarCount Kind=\"recent\" />", navigation);
-        Assert.Contains("<SidebarCount Kind=\"sender\" />", navigation);
-        Assert.Contains("InteractiveServerRenderMode(prerender: false)", counts);
-        Assert.Contains("ScopeFactory.CreateAsyncScope()", counts);
-        Assert.Contains("GetRequiredService<IInboxReaderService>()", counts);
-        Assert.Contains("GetRequiredService<IMessageReviewService>()", counts);
+        Assert.Contains("@_inboxCount inbox messages", navigation);
+        Assert.Contains("@_messageCount pending messages", navigation);
+        Assert.Contains("@_senderCount pending senders", navigation);
+        Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigation);
+        Assert.Contains("ScopeFactory.CreateAsyncScope()", navigation);
+        Assert.Contains("GetRequiredService<IInboxReaderService>()", navigation);
+        Assert.Contains("GetRequiredService<IMessageReviewService>()", navigation);
+        Assert.Contains(".sidebar-count", navigationStyles);
         Assert.Contains("margin-top:auto", navigationStyles);
     }
 
@@ -137,7 +137,6 @@ public sealed class ReviewDashboardAccessibilityTests
     {
         var source = File.ReadAllText(FindPage("Inbox.razor"));
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        var navigationCounts = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "SidebarCount.razor")));
 
         Assert.DoesNotContain("class=\"inbox-folders\"", source);
         Assert.Contains("class=\"inbox-list\"", source);
@@ -146,9 +145,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains(">Show images</button>", source);
         Assert.Contains("referrerpolicy=\"no-referrer\"", source);
         Assert.Contains("href=\"inbox\"", navigation);
-        Assert.Contains("<SidebarCount Kind=\"inbox\" />", navigation);
-        Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigationCounts);
-        Assert.Contains("ScopeFactory.CreateAsyncScope()", navigationCounts);
+        Assert.Contains("@_inboxCount inbox messages", navigation);
+        Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigation);
+        Assert.Contains("ScopeFactory.CreateAsyncScope()", navigation);
     }
 
     private static string FindReviewPage() => FindPage("Review.razor");
