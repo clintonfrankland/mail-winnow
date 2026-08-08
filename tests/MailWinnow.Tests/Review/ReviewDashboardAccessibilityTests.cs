@@ -15,17 +15,25 @@ public sealed class ReviewDashboardAccessibilityTests
     public void DashboardProvidesAccessibleFiltersActionsAndAnnouncements()
     {
         var source = File.ReadAllText(FindReviewPage());
+        var senderSource = File.ReadAllText(FindPage("ReviewBySender.razor"));
         var actions = File.ReadAllText(FindPage("ReviewDecisionActions.razor"));
 
         Assert.Contains("aria-label=\"Message filters\"", source);
-        Assert.Contains("aria-label=\"Review view\"", source);
+        Assert.Contains("aria-label=\"Message filters\"", senderSource);
+        Assert.DoesNotContain("aria-label=\"Review view\"", source);
+        Assert.DoesNotContain("By subject", source);
+        Assert.DoesNotContain("By subject", senderSource);
+        Assert.Contains("@page \"/review\"", source);
+        Assert.Contains("@page \"/review/sender\"", senderSource);
+        Assert.Contains("Message Review - Recent", source);
+        Assert.Contains("Message Review - Sender", senderSource);
         Assert.Contains("role=\"alert\"", source);
         Assert.Contains("role=\"status\"", source);
         Assert.DoesNotContain("Approve this message", source);
         Assert.DoesNotContain("Approve these messages", source);
         Assert.Contains("<ReviewDecisionActions Senders=\"@(new[] { item.Sender })\"", source);
-        Assert.Contains("<ReviewDecisionActions Senders=\"@group.Senders\"", source);
-        Assert.DoesNotContain("@foreach (var sender in group.Senders) { <ReviewDecisionActions", source);
+        Assert.Contains("<ReviewDecisionActions Senders=\"@group.Senders\"", senderSource);
+        Assert.DoesNotContain("@foreach (var sender in group.Senders) { <ReviewDecisionActions", senderSource);
         Assert.DoesNotContain("<strong>Source</strong>", source);
         Assert.DoesNotContain("<strong>Local delivery</strong>", source);
         Assert.DoesNotContain("<strong>Rule</strong>", source);
@@ -33,12 +41,12 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("<strong>Matching context</strong>", source);
         Assert.DoesNotContain("@item.Account", source);
         Assert.DoesNotContain("@item.Outcome", source);
-        Assert.Contains("<strong>Subjects:</strong>", source);
-        Assert.Contains("<strong>Senders:</strong>", source);
-        Assert.Contains("review-meta review-count", source);
-        Assert.Contains("group.Count == 1 ? \"message\" : \"messages\"", source);
-        Assert.DoesNotContain("<span class=\"pill\">@group.Count", source);
-        Assert.Contains("Newest @group.MostRecentUtc", source);
+        Assert.Contains("<strong>Subjects:</strong>", senderSource);
+        Assert.DoesNotContain("<strong>Senders:</strong>", senderSource);
+        Assert.Contains("review-meta review-count", senderSource);
+        Assert.Contains("group.Count == 1 ? \"message\" : \"messages\"", senderSource);
+        Assert.DoesNotContain("<span class=\"pill\">@group.Count", senderSource);
+        Assert.Contains("Newest @group.MostRecentUtc", senderSource);
         Assert.Contains("_busy ? _busyLabel : \"Allow sender\"", actions);
         Assert.Contains(">Allow domain</button>", actions);
         Assert.Contains(">Block sender</button>", actions);
@@ -57,14 +65,20 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("@Sender</button>", actions);
         Assert.DoesNotContain("@domain</button>", actions);
         Assert.Contains("@rendermode InteractiveServer", source);
-        Assert.Contains("@onclick='() => SwitchViewAsync(\"sender\")'", source);
-        Assert.Contains("private async Task SwitchViewAsync(string view) { View = view; await ReloadAsync(); }", source);
+        Assert.Contains("@rendermode InteractiveServer", senderSource);
+        Assert.DoesNotContain("SwitchViewAsync", source);
+        Assert.DoesNotContain("SwitchViewAsync", senderSource);
         Assert.Contains("await ReloadAsync();", source);
         Assert.DoesNotContain("action=\"/review/messages/approve\"", source);
         Assert.Contains("href=\"/rules\">Manage rules", source);
         Assert.DoesNotContain("name=\"outcome\"", source);
         Assert.Contains("RuleOutcome.Pending", source);
         Assert.Contains("Messages disappear after a matching sender or domain rule handles them.", source);
+
+        var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
+        Assert.Contains("> Review - Recent</NavLink>", navigation);
+        Assert.Contains("> Review - Sender</NavLink>", navigation);
+        Assert.DoesNotContain("> Message review</NavLink>", navigation);
     }
 
     [Fact]

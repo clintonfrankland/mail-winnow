@@ -1,4 +1,4 @@
-@page "/review"
+@page "/review/sender"
 @attribute [Authorize]
 @rendermode InteractiveServer
 @using System.Security.Claims
@@ -6,8 +6,8 @@
 @inject IMailboxConfigurationService MailboxService
 @inject IRuleManagementService RuleManagementService
 
-<PageTitle>Message Review - Recent</PageTitle>
-<header class="page-heading"><div class="eyebrow">Decision center</div><h1>Message Review - Recent</h1><p>Review unresolved mail, newest first.</p></header>
+<PageTitle>Message Review - Sender</PageTitle>
+<header class="page-heading"><div class="eyebrow">Decision center</div><h1>Message Review - Sender</h1><p>Review unresolved mail grouped by sender.</p></header>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
 
@@ -17,11 +17,10 @@
     <button class="btn btn-primary">Apply filters</button>
 </form>
 
-<p class="text-body-secondary small">Messages disappear after a matching sender or domain rule handles them.</p>
-@foreach (var item in _recent)
+@foreach (var group in _senders)
 {
-    <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender</div><div class="review-meta">Newest @item.ReceivedUtc.ToString("u")</div></div></div><div class="decision-actions">
-        <ReviewDecisionActions Senders="@(new[] { item.Sender })" MessageIds="@(new[] { item.Id })" OnDecision="ApplyDecisionAsync" />
+    <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@group.Value</h2><div class="review-meta"><strong>Subjects:</strong> @string.Join("; ", group.Samples)</div><div class="review-meta review-count">@group.Count @(group.Count == 1 ? "message" : "messages") <span aria-hidden="true">·</span> Newest @group.MostRecentUtc.ToString("u")</div></div></div><div class="decision-actions">
+        <ReviewDecisionActions Senders="@group.Senders" MessageIds="@group.MessageIds" OnDecision="ApplyDecisionAsync" />
     </div></article>
 }
 
@@ -34,9 +33,9 @@
     private string? Error { get; set; }
     private string? Saved { get; set; }
     private IReadOnlyList<SourceMailboxSummary> _sources = [];
-    private IReadOnlyList<MessageReviewItem> _recent = [];
+    private IReadOnlyList<MessageReviewGroup> _senders = [];
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; await ReloadAsync(); }
-    private async Task ReloadAsync() { var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(User); _recent = await ReviewService.GetRecentAsync(User, filter); }
+    private async Task ReloadAsync() { var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(User); _senders = await ReviewService.GetBySenderAsync(User, filter); }
     private async Task ApplyDecisionAsync(ReviewDecisionRequest decision) => await ReviewDecisionPageHelper.ApplyAsync(User, decision, RuleManagementService, ReloadAsync, value => Saved = value, value => Error = value);
 }
