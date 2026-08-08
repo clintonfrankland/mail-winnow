@@ -168,8 +168,11 @@ public sealed class ReviewDashboardAccessibilityTests
         var mailboxStyles = File.ReadAllText(FindPage("Mailboxes.razor.css"));
 
         Assert.Contains(".message-row{appearance:none", inboxStyles);
-        Assert.Contains("justify-items:start", inboxStyles);
-        Assert.Contains(".message-row strong,.message-row span,.message-row time", inboxStyles);
+        Assert.Contains("align-items:stretch", inboxStyles);
+        Assert.Contains("justify-content:flex-start", inboxStyles);
+        Assert.Contains("overflow-x:hidden", inboxStyles);
+        Assert.Contains("class=\"message-row-content\"", File.ReadAllText(FindPage("Inbox.razor")));
+        Assert.Contains(".message-row-content strong,.message-row-content span,.message-row-content time", inboxStyles);
         Assert.Contains("@media(max-width:520px)", inboxStyles);
         Assert.Contains("mobile.css", app);
         Assert.Contains("@media(max-width:700px)", mobileStyles);

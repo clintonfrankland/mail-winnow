@@ -16,7 +16,11 @@
         @foreach (var message in _messages)
         {
             <button type="button" class="message-row @(_selected?.Uid == message.Uid ? "selected" : null)" @onclick="() => SelectAsync(message)">
-                <strong>@message.From</strong><span>@message.Subject</span><time>@message.Date?.LocalDateTime.ToString("g")</time>
+                <span class="message-row-content">
+                    <strong>@message.From</strong>
+                    <span>@message.Subject</span>
+                    <time>@message.Date?.LocalDateTime.ToString("g")</time>
+                </span>
             </button>
         }
     </section>
