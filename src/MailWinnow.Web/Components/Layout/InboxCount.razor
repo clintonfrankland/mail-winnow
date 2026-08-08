@@ -1,0 +1,14 @@
+@rendermode InteractiveServer
+@inject IInboxReaderService InboxReader
+
+@if (_count > 0) { <span class="inbox-count" aria-label="@_count messages">@_count</span> }
+
+@code {
+    [CascadingParameter] public Task<AuthenticationState> AuthenticationStateTask { get; set; } = null!;
+    private int _count;
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await InboxReader.CountAsync((await AuthenticationStateTask).User);
+        if (result.Succeeded) _count = result.Value;
+    }
+}

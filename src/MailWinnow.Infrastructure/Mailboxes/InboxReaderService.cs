@@ -14,6 +14,7 @@ public sealed record InboxLoadResult<T>(bool Succeeded, T? Value, string? Error 
 
 public interface IInboxReaderService
 {
+    Task<InboxLoadResult<int>> CountAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default);
     Task<InboxLoadResult<IReadOnlyList<InboxMessageSummary>>> ListAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default);
     Task<InboxLoadResult<InboxMessageContent>> ReadAsync(ClaimsPrincipal user, uint uid, uint uidValidity, CancellationToken cancellationToken = default);
 }
@@ -25,6 +26,16 @@ public sealed class InboxReaderService(
     IOptions<LocalImapOptions> options,
     IImapConnectionService imap) : IInboxReaderService
 {
+    public async Task<InboxLoadResult<int>> CountAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    {
+        var destination = await DestinationAsync(user, cancellationToken);
+        if (destination is null) return new(false, 0, "Configure and enable a destination mailbox first.");
+        var snapshot = await imap.GetFolderSnapshotAsync(Connection(destination), destination.Folder, cancellationToken);
+        return snapshot.Succeeded && snapshot.Value is not null
+            ? new(true, snapshot.Value.Uids.Count)
+            : new(false, 0, snapshot.Error ?? "Unable to read the destination mailbox.");
+    }
+
     public async Task<InboxLoadResult<IReadOnlyList<InboxMessageSummary>>> ListAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         var destination = await DestinationAsync(user, cancellationToken);

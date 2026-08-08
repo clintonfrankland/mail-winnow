@@ -97,13 +97,14 @@ public sealed class ReviewDashboardAccessibilityTests
         var source = File.ReadAllText(FindPage("Inbox.razor"));
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
 
-        Assert.Contains("class=\"inbox-folders\"", source);
+        Assert.DoesNotContain("class=\"inbox-folders\"", source);
         Assert.Contains("class=\"inbox-list\"", source);
         Assert.Contains("class=\"inbox-reader\"", source);
         Assert.Contains("Remote images are blocked", source);
         Assert.Contains(">Show images</button>", source);
         Assert.Contains("referrerpolicy=\"no-referrer\"", source);
         Assert.Contains("href=\"inbox\"", navigation);
+        Assert.Contains("<InboxCount />", navigation);
     }
 
     private static string FindReviewPage() => FindPage("Review.razor");

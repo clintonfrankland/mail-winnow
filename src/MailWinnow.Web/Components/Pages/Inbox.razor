@@ -9,7 +9,6 @@
 @if (!string.IsNullOrWhiteSpace(_error)) { <div class="alert alert-danger" role="alert">@_error</div> }
 
 <div class="inbox-shell" aria-busy="@_busy">
-    <aside class="inbox-folders" aria-label="Mail folders"><button type="button" class="folder-active">Inbox <span>@_messages.Count</span></button></aside>
     <section class="inbox-list" aria-label="Messages">
         <header><strong>Inbox</strong><button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="LoadAsync">Refresh</button></header>
         @if (_busy && _messages.Count == 0) { <p class="inbox-empty">Loading messages…</p> }
