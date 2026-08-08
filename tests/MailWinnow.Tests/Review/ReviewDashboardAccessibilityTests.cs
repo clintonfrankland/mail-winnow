@@ -24,6 +24,17 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("Approve this message", source);
         Assert.DoesNotContain("Approve these messages", source);
         Assert.Contains("<ReviewDecisionActions Sender=\"@item.Sender\"", source);
+        Assert.DoesNotContain("<strong>Source</strong>", source);
+        Assert.DoesNotContain("<strong>Local delivery</strong>", source);
+        Assert.DoesNotContain("<strong>Rule</strong>", source);
+        Assert.DoesNotContain("<strong>Retention</strong>", source);
+        Assert.DoesNotContain("<strong>Matching context</strong>", source);
+        Assert.DoesNotContain("@item.Account", source);
+        Assert.DoesNotContain("@item.Outcome", source);
+        Assert.Contains("<strong>Subjects:</strong>", source);
+        Assert.Contains("<strong>Senders:</strong>", source);
+        Assert.Contains("@group.Count messages", source);
+        Assert.Contains("Newest @group.MostRecentUtc", source);
         Assert.Contains(">Allow sender</button>", actions);
         Assert.Contains(">Allow domain</button>", actions);
         Assert.Contains(">Block sender</button>", actions);
