@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuleEvaluationService, RuleEvaluationService>();
         services.AddScoped<IRuleManagementService, RuleManagementService>();
         services.AddScoped<IMessageReviewService, MessageReviewService>();
+        services.AddScoped<IInboxReaderService, InboxReaderService>();
         services.AddScoped<IMessageDeliveryService, MessageDeliveryService>();
         services.AddScoped<IBlockedMessageDeletionService, BlockedMessageDeletionService>();
         services.AddScoped<IAdministrationService, AdministrationService>();
