@@ -1,17 +1,22 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject IMessageReviewService ReviewService
+@inject IInboxReaderService InboxReader
 
+<div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inboxes @if (_inboxCount > 0) { <span class="review-count" aria-label="@_inboxCount inbox messages">@_inboxCount</span> }</NavLink></div>
 <div class="nav-item"><NavLink class="nav-link" href="review" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">✓</span> Review - Recent @if (_messageCount > 0) { <span class="review-count" aria-label="@_messageCount pending messages">@_messageCount</span> }</NavLink></div>
 <div class="nav-item"><NavLink class="nav-link" href="review/sender"><span class="nav-icon" aria-hidden="true">☷</span> Review - Sender @if (_senderCount > 0) { <span class="review-count" aria-label="@_senderCount pending senders">@_senderCount</span> }</NavLink></div>
 
 @code {
     [CascadingParameter] public Task<AuthenticationState> AuthenticationStateTask { get; set; } = null!;
+    private int _inboxCount;
     private int _messageCount;
     private int _senderCount;
 
     protected override async Task OnInitializedAsync()
     {
         var user = (await AuthenticationStateTask).User;
+        var inbox = await InboxReader.CountAsync(user);
+        if (inbox.Succeeded) _inboxCount = inbox.Value;
         var filter = new MessageReviewFilter(null, RuleOutcome.Pending, null);
         var messages = await ReviewService.GetRecentAsync(user, filter);
         _messageCount = messages.Count;
