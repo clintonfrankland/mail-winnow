@@ -1,17 +1,17 @@
-<div class="decision-rule-row">
+<div class="decision-rule-row" aria-busy="@_busy">
     @if (Senders.Count > 1)
     {
-        <select @bind="_selectedSender" aria-label="Target sender">
+        <select @bind="_selectedSender" aria-label="Target sender" disabled="@_busy">
             @foreach (var sender in Senders) { <option value="@sender">@sender</option> }
         </select>
     }
-    <select @bind="_retentionDays" aria-label="Destination retention">
+    <select @bind="_retentionDays" aria-label="Destination retention" disabled="@_busy">
         <option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option>
     </select>
     <div class="split-action">
-        <button type="button" class="btn btn-success split-action-primary" @onclick="AllowSenderAsync">Allow sender</button>
+        <button type="button" class="btn btn-success split-action-primary" disabled="@_busy" @onclick="AllowSenderAsync">@(_busy ? _busyLabel : "Allow sender")</button>
         <div class="split-action-menu">
-            <button type="button" class="btn btn-success split-action-toggle" aria-label="More decisions" aria-expanded="@_menuOpen" @onclick="ToggleMenu"><span aria-hidden="true">▾</span></button>
+            <button type="button" class="btn btn-success split-action-toggle" disabled="@_busy" aria-label="More decisions" aria-expanded="@_menuOpen" @onclick="ToggleMenu"><span aria-hidden="true">▾</span></button>
             @if (_menuOpen)
             {
                 <div class="split-action-options" role="menu">
@@ -31,6 +31,8 @@
     [Parameter, EditorRequired] public IReadOnlyList<Guid> MessageIds { get; set; } = [];
     private int? _retentionDays;
     private bool _menuOpen;
+    private bool _busy;
+    private string _busyLabel = "Working…";
     private string _selectedSender = string.Empty;
     private string Sender => _selectedSender;
     private string? Domain { get { var at = Sender.LastIndexOf('@'); return at > 0 && at < Sender.Length - 1 ? Sender[(at + 1)..] : null; } }
@@ -44,6 +46,9 @@
     private async Task DecideAsync(RuleAction action, RuleMatchType matchType, string value)
     {
         _menuOpen = false;
-        await OnDecision.InvokeAsync(new(action, matchType, value, action == RuleAction.PermanentlyAllow ? _retentionDays : null, MessageIds));
+        _busy = true;
+        _busyLabel = action switch { RuleAction.PermanentlyAllow => "Allowing…", RuleAction.PermanentlyBlock => "Blocking…", RuleAction.DeleteOneMessage => "Deleting…", _ => "Working…" };
+        try { await OnDecision.InvokeAsync(new(action, matchType, value, action == RuleAction.PermanentlyAllow ? _retentionDays : null, MessageIds)); }
+        finally { _busy = false; }
     }
 }
