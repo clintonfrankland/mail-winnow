@@ -4,7 +4,9 @@
     <nav class="nav" aria-label="Primary navigation">
         <AuthorizeView>
             <Authorized>
-                <ReviewNavItems />
+                <div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inboxes <SidebarCount Kind="inbox" /></NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="review" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">✓</span> Review - Recent <SidebarCount Kind="recent" /></NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="review/sender"><span class="nav-icon" aria-hidden="true">☷</span> Review - Sender <SidebarCount Kind="sender" /></NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="rules"><span class="nav-icon" aria-hidden="true">⚙</span> Rules</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="mailboxes"><span class="nav-icon" aria-hidden="true">✉</span> Mailboxes</NavLink></div>
                 <div class="nav-item nav-signout"><form method="post" action="/auth/logout"><AntiforgeryToken /><button class="nav-link" type="submit"><span class="nav-icon" aria-hidden="true">↪</span> Sign out</button></form></div>

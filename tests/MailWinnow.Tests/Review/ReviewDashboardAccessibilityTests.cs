@@ -76,7 +76,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("Messages disappear after a matching sender or domain rule handles them.", source);
 
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        Assert.Contains("<ReviewNavItems />", navigation);
+        Assert.Contains("<SidebarCount Kind=\"recent\" />", navigation);
         Assert.DoesNotContain("> Message review</NavLink>", navigation);
     }
 
@@ -84,7 +84,7 @@ public sealed class ReviewDashboardAccessibilityTests
     public void NavigationIsMailFocusedOrderedAndShowsReviewCounts()
     {
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        var reviewItems = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "ReviewNavItems.razor")));
+        var counts = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "SidebarCount.razor")));
         var navigationStyles = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor.css")));
 
         Assert.DoesNotContain("Workspace", navigation);
@@ -93,17 +93,18 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("admin/operations", navigation);
         Assert.DoesNotContain("admin/household", navigation);
         Assert.DoesNotContain("<InboxCount />", navigation);
-        Assert.True(navigation.IndexOf("<ReviewNavItems />", StringComparison.Ordinal) < navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal));
+        Assert.True(navigation.IndexOf("Inboxes", StringComparison.Ordinal) < navigation.IndexOf("Review - Recent", StringComparison.Ordinal));
+        Assert.True(navigation.IndexOf("Review - Recent", StringComparison.Ordinal) < navigation.IndexOf("Review - Sender", StringComparison.Ordinal));
+        Assert.True(navigation.IndexOf("Review - Sender", StringComparison.Ordinal) < navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Sign out</button>", StringComparison.Ordinal));
-        Assert.Contains("Review - Recent", reviewItems);
-        Assert.Contains("Review - Sender", reviewItems);
-        Assert.Contains("Inboxes", reviewItems);
-        Assert.Contains("_inboxCount", reviewItems);
-        Assert.Contains("_messageCount", reviewItems);
-        Assert.Contains("_senderCount", reviewItems);
-        Assert.Contains("InteractiveServerRenderMode(prerender: false)", reviewItems);
-        Assert.Equal(1, CountOccurrences(navigation, "<ReviewNavItems />"));
+        Assert.Contains("<SidebarCount Kind=\"inbox\" />", navigation);
+        Assert.Contains("<SidebarCount Kind=\"recent\" />", navigation);
+        Assert.Contains("<SidebarCount Kind=\"sender\" />", navigation);
+        Assert.Contains("InteractiveServerRenderMode(prerender: false)", counts);
+        Assert.Contains("ScopeFactory.CreateAsyncScope()", counts);
+        Assert.Contains("GetRequiredService<IInboxReaderService>()", counts);
+        Assert.Contains("GetRequiredService<IMessageReviewService>()", counts);
         Assert.Contains("margin-top:auto", navigationStyles);
     }
 
@@ -136,7 +137,7 @@ public sealed class ReviewDashboardAccessibilityTests
     {
         var source = File.ReadAllText(FindPage("Inbox.razor"));
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        var reviewItems = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "ReviewNavItems.razor")));
+        var navigationCounts = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "SidebarCount.razor")));
 
         Assert.DoesNotContain("class=\"inbox-folders\"", source);
         Assert.Contains("class=\"inbox-list\"", source);
@@ -144,20 +145,13 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("Remote images are blocked", source);
         Assert.Contains(">Show images</button>", source);
         Assert.Contains("referrerpolicy=\"no-referrer\"", source);
-        Assert.Contains("href=\"inbox\"", reviewItems);
-        Assert.Contains("<ReviewNavItems />", navigation);
-        var count = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "InboxCount.razor")));
-        Assert.Contains("InteractiveServerRenderMode(prerender: false)", count);
+        Assert.Contains("href=\"inbox\"", navigation);
+        Assert.Contains("<SidebarCount Kind=\"inbox\" />", navigation);
+        Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigationCounts);
+        Assert.Contains("ScopeFactory.CreateAsyncScope()", navigationCounts);
     }
 
     private static string FindReviewPage() => FindPage("Review.razor");
-
-    private static int CountOccurrences(string value, string search)
-    {
-        var count = 0;
-        for (var index = 0; (index = value.IndexOf(search, index, StringComparison.Ordinal)) >= 0; index += search.Length) count++;
-        return count;
-    }
 
     private static string FindPage(string relativePath)
     {

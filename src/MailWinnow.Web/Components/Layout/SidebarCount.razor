@@ -1,0 +1,29 @@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject IServiceScopeFactory ScopeFactory
+
+@if (_count > 0) { <span class="sidebar-count" aria-label="@Label">@_count</span> }
+
+@code {
+    [Parameter, EditorRequired] public string Kind { get; set; } = null!;
+    [CascadingParameter] public Task<AuthenticationState> AuthenticationStateTask { get; set; } = null!;
+    private int _count;
+    private string Label => Kind == "sender" ? $"{_count} pending senders" : $"{_count} messages";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationStateTask).User;
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        if (Kind == "inbox")
+        {
+            var result = await scope.ServiceProvider.GetRequiredService<IInboxReaderService>().CountAsync(user);
+            if (result.Succeeded) _count = result.Value;
+            return;
+        }
+
+        var messages = await scope.ServiceProvider.GetRequiredService<IMessageReviewService>()
+            .GetRecentAsync(user, new MessageReviewFilter(null, RuleOutcome.Pending, null));
+        _count = Kind == "sender"
+            ? messages.Select(message => message.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+            : messages.Count;
+    }
+}
