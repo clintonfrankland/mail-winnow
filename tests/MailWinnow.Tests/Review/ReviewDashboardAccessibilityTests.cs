@@ -92,7 +92,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("admin/operations", navigation);
         Assert.DoesNotContain("admin/household", navigation);
         Assert.DoesNotContain("<InboxCount />", navigation);
-        Assert.True(navigation.IndexOf("Inboxes", StringComparison.Ordinal) < navigation.IndexOf("Review - Recent", StringComparison.Ordinal));
+        Assert.DoesNotContain("Inboxes", navigation);
+        Assert.True(navigation.IndexOf("> Inbox ", StringComparison.Ordinal) < navigation.IndexOf("Review - Recent", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("Review - Recent", StringComparison.Ordinal) < navigation.IndexOf("Review - Sender", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("Review - Sender", StringComparison.Ordinal) < navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal));
@@ -106,6 +107,10 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("GetRequiredService<IMessageReviewService>()", navigation);
         Assert.Contains(".sidebar-count", navigationStyles);
         Assert.Contains("margin-top:auto", navigationStyles);
+        Assert.Contains("class=\"app-version\"", navigation);
+        Assert.Contains("typeof(Program).Assembly.GetName().Version", navigation);
+        Assert.True(navigation.IndexOf("class=\"app-version\"", StringComparison.Ordinal) < navigation.IndexOf("> Sign out</button>", StringComparison.Ordinal));
+        Assert.Contains(".app-version", navigationStyles);
     }
 
     [Fact]
@@ -148,6 +153,30 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("@_inboxCount inbox messages", navigation);
         Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigation);
         Assert.Contains("ScopeFactory.CreateAsyncScope()", navigation);
+    }
+
+    [Fact]
+    public void InboxRowsResetGlobalButtonLayoutAndPagesHavePhoneBreakpoints()
+    {
+        var inboxStyles = File.ReadAllText(FindPage("Inbox.razor.css"));
+        var app = File.ReadAllText(FindPage(Path.Combine("..", "App.razor")));
+        var mobileStyles = File.ReadAllText(FindPage(Path.Combine("..", "..", "wwwroot", "mobile.css")));
+        var layoutStyles = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "MainLayout.razor.css")));
+        var navigationStyles = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor.css")));
+        var mailboxStyles = File.ReadAllText(FindPage("Mailboxes.razor.css"));
+
+        Assert.Contains(".message-row{appearance:none", inboxStyles);
+        Assert.Contains("justify-items:start", inboxStyles);
+        Assert.Contains(".message-row strong,.message-row span,.message-row time", inboxStyles);
+        Assert.Contains("@media(max-width:520px)", inboxStyles);
+        Assert.Contains("mobile.css", app);
+        Assert.Contains("@media(max-width:700px)", mobileStyles);
+        Assert.Contains("overflow-x:hidden", mobileStyles);
+        Assert.Contains("font-size:16px", mobileStyles);
+        Assert.Contains("@media(max-width:760px)", layoutStyles);
+        Assert.Contains("@media(max-width:760px)", navigationStyles);
+        Assert.Contains("100dvh", navigationStyles);
+        Assert.Contains("@media (max-width: 520px)", mailboxStyles);
     }
 
     private static string FindReviewPage() => FindPage("Review.razor");

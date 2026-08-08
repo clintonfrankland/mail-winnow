@@ -8,11 +8,12 @@
     <nav class="nav" aria-label="Primary navigation">
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inboxes @if (_inboxCount > 0) { <span class="sidebar-count" aria-label="@_inboxCount inbox messages">@_inboxCount</span> }</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inbox @if (_inboxCount > 0) { <span class="sidebar-count" aria-label="@_inboxCount inbox messages">@_inboxCount</span> }</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="review" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">✓</span> Review - Recent @if (_messageCount > 0) { <span class="sidebar-count" aria-label="@_messageCount pending messages">@_messageCount</span> }</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="review/sender"><span class="nav-icon" aria-hidden="true">☷</span> Review - Sender @if (_senderCount > 0) { <span class="sidebar-count" aria-label="@_senderCount pending senders">@_senderCount</span> }</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="rules"><span class="nav-icon" aria-hidden="true">⚙</span> Rules</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="mailboxes"><span class="nav-icon" aria-hidden="true">✉</span> Mailboxes</NavLink></div>
+                <div class="app-version" aria-label="Mail Winnow version @AppVersion">v@AppVersion</div>
                 <div class="nav-item nav-signout"><form method="post" action="/auth/logout"><AntiforgeryToken /><button class="nav-link" type="submit"><span class="nav-icon" aria-hidden="true">↪</span> Sign out</button></form></div>
             </Authorized>
             <NotAuthorized><div class="nav-item"><NavLink class="nav-link" href="login"><span class="nav-icon" aria-hidden="true">↪</span> Sign in</NavLink></div></NotAuthorized>
@@ -24,6 +25,7 @@
     private int _inboxCount;
     private int _messageCount;
     private int _senderCount;
+    private static string AppVersion => typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "unknown";
 
     protected override async Task OnInitializedAsync()
     {

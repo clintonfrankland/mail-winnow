@@ -28,4 +28,8 @@
     .add-source-editor[open] { width: 100%; }
     .destination-values { grid-template-columns: 1fr 1fr; }
     .row-editor[open] form { position: fixed; inset: 1rem; max-height: calc(100vh - 2rem); overflow: auto; width: auto; }
+    .source-form, .destination-form { min-width: 0; width: 100%; }
+    .destination-status { flex-direction: column; }
+    .source-actions { justify-content: flex-start; min-width: 0; }
 }
+@media (max-width: 520px) { .destination-values { grid-template-columns: 1fr; } }
