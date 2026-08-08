@@ -2,21 +2,12 @@
 <input type="checkbox" title="Navigation menu" class="navbar-toggler" aria-label="Toggle navigation" />
 <div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
     <nav class="nav" aria-label="Primary navigation">
-        <div class="nav-section-label">Workspace</div>
-        <div class="nav-item"><NavLink class="nav-link" href="" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">⌂</span> Overview</NavLink></div>
-        <AuthorizeView Roles="Administrator">
-            <div class="nav-section-label">Administration</div>
-            <div class="nav-item"><NavLink class="nav-link" href="admin/operations"><span class="nav-icon" aria-hidden="true">◫</span> Operations</NavLink></div>
-            <div class="nav-item"><NavLink class="nav-link" href="admin/household"><span class="nav-icon" aria-hidden="true">♙</span> Household</NavLink></div>
-        </AuthorizeView>
         <AuthorizeView>
             <Authorized>
-                <div class="nav-section-label">Mail</div>
-                <div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inbox <InboxCount /></NavLink></div>
-                <div class="nav-item"><NavLink class="nav-link" href="mailboxes"><span class="nav-icon" aria-hidden="true">✉</span> Mailboxes</NavLink></div>
-                <div class="nav-item"><NavLink class="nav-link" href="review" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">✓</span> Review - Recent</NavLink></div>
-                <div class="nav-item"><NavLink class="nav-link" href="review/sender"><span class="nav-icon" aria-hidden="true">☷</span> Review - Sender</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inboxes <InboxCount /></NavLink></div>
+                <ReviewNavItems />
                 <div class="nav-item"><NavLink class="nav-link" href="rules"><span class="nav-icon" aria-hidden="true">⚙</span> Rules</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="mailboxes"><span class="nav-icon" aria-hidden="true">✉</span> Mailboxes</NavLink></div>
                 <div class="nav-item nav-signout"><form method="post" action="/auth/logout"><AntiforgeryToken /><button class="nav-link" type="submit"><span class="nav-icon" aria-hidden="true">↪</span> Sign out</button></form></div>
             </Authorized>
             <NotAuthorized><div class="nav-item"><NavLink class="nav-link" href="login"><span class="nav-icon" aria-hidden="true">↪</span> Sign in</NavLink></div></NotAuthorized>

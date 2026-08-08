@@ -76,9 +76,33 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("Messages disappear after a matching sender or domain rule handles them.", source);
 
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        Assert.Contains("> Review - Recent</NavLink>", navigation);
-        Assert.Contains("> Review - Sender</NavLink>", navigation);
+        Assert.Contains("<ReviewNavItems />", navigation);
         Assert.DoesNotContain("> Message review</NavLink>", navigation);
+    }
+
+    [Fact]
+    public void NavigationIsMailFocusedOrderedAndShowsReviewCounts()
+    {
+        var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
+        var reviewItems = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "ReviewNavItems.razor")));
+        var navigationStyles = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor.css")));
+
+        Assert.DoesNotContain("Workspace", navigation);
+        Assert.DoesNotContain("Overview", navigation);
+        Assert.DoesNotContain("Administration", navigation);
+        Assert.DoesNotContain("admin/operations", navigation);
+        Assert.DoesNotContain("admin/household", navigation);
+        Assert.Contains("> Inboxes <InboxCount />", navigation);
+        Assert.True(navigation.IndexOf("Inboxes", StringComparison.Ordinal) < navigation.IndexOf("<ReviewNavItems />", StringComparison.Ordinal));
+        Assert.True(navigation.IndexOf("<ReviewNavItems />", StringComparison.Ordinal) < navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal));
+        Assert.True(navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal));
+        Assert.True(navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Sign out</button>", StringComparison.Ordinal));
+        Assert.Contains("Review - Recent", reviewItems);
+        Assert.Contains("Review - Sender", reviewItems);
+        Assert.Contains("_messageCount", reviewItems);
+        Assert.Contains("_senderCount", reviewItems);
+        Assert.Contains("InteractiveServerRenderMode(prerender: false)", reviewItems);
+        Assert.Contains("margin-top:auto", navigationStyles);
     }
 
     [Fact]
