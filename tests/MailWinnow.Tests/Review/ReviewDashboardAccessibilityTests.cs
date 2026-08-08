@@ -105,6 +105,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("referrerpolicy=\"no-referrer\"", source);
         Assert.Contains("href=\"inbox\"", navigation);
         Assert.Contains("<InboxCount />", navigation);
+        var count = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "InboxCount.razor")));
+        Assert.Contains("InteractiveServerRenderMode(prerender: false)", count);
     }
 
     private static string FindReviewPage() => FindPage("Review.razor");
