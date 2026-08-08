@@ -12,14 +12,18 @@ public sealed class ReviewDashboardAccessibilityTests
     }
 
     [Fact]
-    public void DashboardProvidesAccessibleFiltersActionsAndAnnouncements()
+    public void DashboardProvidesAccessibleActionsAndAnnouncementsWithoutFilters()
     {
         var source = File.ReadAllText(FindReviewPage());
         var senderSource = File.ReadAllText(FindPage("ReviewBySender.razor"));
         var actions = File.ReadAllText(FindPage("ReviewDecisionActions.razor"));
 
-        Assert.Contains("aria-label=\"Message filters\"", source);
-        Assert.Contains("aria-label=\"Message filters\"", senderSource);
+        Assert.DoesNotContain("aria-label=\"Message filters\"", source);
+        Assert.DoesNotContain("aria-label=\"Message filters\"", senderSource);
+        Assert.DoesNotContain("SupplyParameterFromQuery", source);
+        Assert.DoesNotContain("SupplyParameterFromQuery", senderSource);
+        Assert.DoesNotContain("MailboxService", source);
+        Assert.DoesNotContain("MailboxService", senderSource);
         Assert.DoesNotContain("aria-label=\"Review view\"", source);
         Assert.DoesNotContain("By subject", source);
         Assert.DoesNotContain("By subject", senderSource);

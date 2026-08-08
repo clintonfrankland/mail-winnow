@@ -3,19 +3,12 @@
 @rendermode InteractiveServer
 @using System.Security.Claims
 @inject IMessageReviewService ReviewService
-@inject IMailboxConfigurationService MailboxService
 @inject IRuleManagementService RuleManagementService
 
 <PageTitle>Message Review - Sender</PageTitle>
 <header class="page-heading"><div class="eyebrow">Decision center</div><h1>Message Review - Sender</h1><p>Review unresolved mail grouped by sender.</p></header>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
-
-<form method="get" class="card section-card review-filter" aria-label="Message filters">
-    <label>Account <select class="form-select" name="sourceMailboxId"><option value="">All accounts</option>@foreach (var source in _sources) { <option value="@source.Id" selected="@(SourceMailboxId == source.Id)">@source.DisplayName</option> }</select></label>
-    <label>Sender or subject <input class="form-control" name="search" value="@Search" /></label>
-    <button class="btn btn-primary">Apply filters</button>
-</form>
 
 @foreach (var group in _senders)
 {
@@ -28,14 +21,11 @@
 
 @code {
     [CascadingParameter] public Task<AuthenticationState> AuthenticationStateTask { get; set; } = null!;
-    [SupplyParameterFromQuery] public Guid? SourceMailboxId { get; set; }
-    [SupplyParameterFromQuery] public string? Search { get; set; }
     private string? Error { get; set; }
     private string? Saved { get; set; }
-    private IReadOnlyList<SourceMailboxSummary> _sources = [];
     private IReadOnlyList<MessageReviewGroup> _senders = [];
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; await ReloadAsync(); }
-    private async Task ReloadAsync() { var filter = new MessageReviewFilter(SourceMailboxId, RuleOutcome.Pending, Search); _sources = await MailboxService.ListSourcesAsync(User); _senders = await ReviewService.GetBySenderAsync(User, filter); }
+    private async Task ReloadAsync() => _senders = await ReviewService.GetBySenderAsync(User, new MessageReviewFilter(null, RuleOutcome.Pending, null));
     private async Task ApplyDecisionAsync(ReviewDecisionRequest decision) => await ReviewDecisionPageHelper.ApplyAsync(User, decision, RuleManagementService, ReloadAsync, value => Saved = value, value => Error = value);
 }
