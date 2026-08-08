@@ -29,7 +29,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<string> Senders { get; set; } = [];
     [Parameter, EditorRequired] public EventCallback<ReviewDecisionRequest> OnDecision { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<Guid> MessageIds { get; set; } = [];
-    private int? _retentionDays;
+    private int? _retentionDays = 1;
     private bool _menuOpen;
     private bool _busy;
     private string _busyLabel = "Working…";

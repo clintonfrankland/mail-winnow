@@ -60,6 +60,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("\"Blocking…\"", actions);
         Assert.Contains("\"Deleting…\"", actions);
         Assert.Contains("aria-label=\"Target sender\"", actions);
+        Assert.Contains("private int? _retentionDays = 1;", actions);
         Assert.Contains("role=\"menu\"", actions);
         Assert.Contains("_menuOpen = false;", actions);
         Assert.DoesNotContain("@Sender</button>", actions);
