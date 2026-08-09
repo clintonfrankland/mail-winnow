@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @using System.Security.Claims
 @inject IMessageReviewService ReviewService
-@inject IRuleManagementService RuleManagementService
+@inject IReviewDecisionQueue DecisionQueue
 
 <PageTitle>Message Review - Recent</PageTitle>
 <header class="page-heading"><h1>Message Review - Recent</h1></header>
@@ -27,5 +27,12 @@
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; await ReloadAsync(); }
     private async Task ReloadAsync() => _recent = await ReviewService.GetRecentAsync(User, new MessageReviewFilter(null, RuleOutcome.Pending, null));
-    private async Task ApplyDecisionAsync(ReviewDecisionRequest decision) => await ReviewDecisionPageHelper.ApplyAsync(User, decision, RuleManagementService, ReloadAsync, value => Saved = value, value => Error = value);
+    private async Task ApplyDecisionAsync(ReviewDecisionRequest decision)
+    {
+        var previous = _recent;
+        _recent = _recent.Where(item => !ReviewDecisionPageHelper.Matches(decision, item.Id, item.Sender)).ToArray();
+        StateHasChanged();
+        var queued = await ReviewDecisionPageHelper.QueueAsync(User, decision, DecisionQueue, value => Saved = value, value => Error = value);
+        if (!queued) _recent = previous;
+    }
 }

@@ -76,6 +76,12 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.DoesNotContain("SwitchViewAsync", source);
         Assert.DoesNotContain("SwitchViewAsync", senderSource);
         Assert.Contains("await ReloadAsync();", source);
+        Assert.Contains("@inject IReviewDecisionQueue DecisionQueue", source);
+        Assert.Contains("@inject IReviewDecisionQueue DecisionQueue", senderSource);
+        Assert.Contains("StateHasChanged();", source);
+        Assert.Contains("StateHasChanged();", senderSource);
+        Assert.Contains("ReviewDecisionPageHelper.Matches", source);
+        Assert.Contains("ReviewDecisionPageHelper.Matches", senderSource);
         Assert.DoesNotContain("action=\"/review/messages/approve\"", source);
         Assert.Contains("href=\"/rules\">Manage rules", source);
         Assert.DoesNotContain("name=\"outcome\"", source);

@@ -12,6 +12,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMailWinnowSqlServer(builder.Configuration);
 builder.Services.AddHostedService(provider => provider.GetRequiredService<MailWinnow.Infrastructure.Mailboxes.InboxDeletionQueue>());
+builder.Services.AddHostedService(provider => provider.GetRequiredService<MailWinnow.Infrastructure.Rules.ReviewDecisionQueue>());
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddIdentityCookies();
 builder.Services.ConfigureApplicationCookie(options =>

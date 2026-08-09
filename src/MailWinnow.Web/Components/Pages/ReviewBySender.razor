@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @using System.Security.Claims
 @inject IMessageReviewService ReviewService
-@inject IRuleManagementService RuleManagementService
+@inject IReviewDecisionQueue DecisionQueue
 
 <PageTitle>Message Review - Sender</PageTitle>
 <header class="page-heading"><h1>Message Review - Sender</h1></header>
@@ -27,5 +27,14 @@
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; await ReloadAsync(); }
     private async Task ReloadAsync() => _senders = await ReviewService.GetBySenderAsync(User, new MessageReviewFilter(null, RuleOutcome.Pending, null));
-    private async Task ApplyDecisionAsync(ReviewDecisionRequest decision) => await ReviewDecisionPageHelper.ApplyAsync(User, decision, RuleManagementService, ReloadAsync, value => Saved = value, value => Error = value);
+    private async Task ApplyDecisionAsync(ReviewDecisionRequest decision)
+    {
+        var previous = _senders;
+        _senders = _senders.Where(group => decision.Action == RuleAction.DeleteOneMessage
+            ? !group.MessageIds.Any(decision.MessageIds.Contains)
+            : !group.Senders.Any(sender => ReviewDecisionPageHelper.Matches(decision, Guid.Empty, sender))).ToArray();
+        StateHasChanged();
+        var queued = await ReviewDecisionPageHelper.QueueAsync(User, decision, DecisionQueue, value => Saved = value, value => Error = value);
+        if (!queued) _senders = previous;
+    }
 }
