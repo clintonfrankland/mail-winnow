@@ -164,7 +164,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("class=\"reader-actions\"", source);
         Assert.Contains("bi bi-image", source);
         Assert.Contains("<span>Show images</span>", source);
+        Assert.Contains("@onclick=\"ShowImages\"", source);
         Assert.Contains("<iframe class=\"message-body\"", source);
+        Assert.Contains("@key=\"ViewerKey\"", source);
         Assert.Contains("sandbox=\"\"", source);
         Assert.Contains("srcdoc=", source);
         Assert.DoesNotContain("<pre class=\"message-body\"", source);
