@@ -166,6 +166,10 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("sandbox=\"\"", source);
         Assert.Contains("srcdoc=", source);
         Assert.DoesNotContain("<pre class=\"message-body\"", source);
+        Assert.Contains("class=\"btn btn-outline-danger reader-delete\"", source);
+        Assert.Contains("_messages = _messages.Where", source);
+        Assert.Contains("await DeletionQueue.QueueAsync", source);
+        Assert.Contains("await SelectAsync(_messages[Math.Min", source);
         Assert.Contains("referrerpolicy=\"no-referrer\"", source);
         Assert.Contains("href=\"inbox\"", navigation);
         Assert.Contains("@_inboxCount inbox messages", navigation);

@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMailWinnowSqlServer(builder.Configuration);
+builder.Services.AddHostedService(provider => provider.GetRequiredService<MailWinnow.Infrastructure.Mailboxes.InboxDeletionQueue>());
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddIdentityCookies();
 builder.Services.ConfigureApplicationCookie(options =>
