@@ -162,7 +162,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("class=\"inbox-reader\"", source);
         Assert.DoesNotContain("Remote images are blocked", source);
         Assert.Contains("class=\"reader-actions\"", source);
-        Assert.Contains("bi bi-image", source);
+        Assert.Equal(2, source.Split("class=\"button-icon\"", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, source.Split("aria-hidden=\"true\"", StringSplitOptions.None).Length - 1);
         Assert.Contains("<span>Show images</span>", source);
         Assert.Contains("@onclick=\"ShowImages\"", source);
         Assert.Contains("<iframe class=\"message-body\"", source);
@@ -170,7 +171,6 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("sandbox=\"\"", source);
         Assert.Contains("srcdoc=", source);
         Assert.DoesNotContain("<pre class=\"message-body\"", source);
-        Assert.Contains("bi bi-trash3", source);
         Assert.Contains("<span>Delete</span>", source);
         Assert.True(source.IndexOf("<span>Show images</span>", StringComparison.Ordinal) < source.IndexOf("<span>Delete</span>", StringComparison.Ordinal));
         Assert.Contains("_messages = _messages.Where", source);
