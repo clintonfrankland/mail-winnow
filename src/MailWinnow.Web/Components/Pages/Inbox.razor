@@ -29,8 +29,14 @@
         @if (_selected is null) { <div class="reader-empty">Select a message to read it.</div> }
         else
         {
-            <header class="reader-header"><div class="reader-heading"><h2>@_selected.Subject</h2><div><strong>From:</strong> @_selected.From</div><div><strong>To:</strong> @_selected.To</div><time>@_selected.Date?.LocalDateTime.ToString("f")</time></div><button type="button" class="btn btn-outline-danger reader-delete" disabled="@_busy" @onclick="DeleteSelectedAsync" aria-label="Delete this email">Delete</button></header>
-            @if (_selected.HasRemoteImages && !_showImages) { <div class="images-blocked">Remote images are blocked. <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => _showImages = true">Show images</button></div> }
+            <div class="reader-actions" aria-label="Email actions">
+                @if (_selected.HasRemoteImages && !_showImages)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_busy" @onclick="() => _showImages = true"><i class="bi bi-image" aria-hidden="true"></i><span>Show images</span></button>
+                }
+                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_busy" @onclick="DeleteSelectedAsync" aria-label="Delete this email"><i class="bi bi-trash3" aria-hidden="true"></i><span>Delete</span></button>
+            </div>
+            <header class="reader-header"><div class="reader-heading"><h2>@_selected.Subject</h2><div><strong>From:</strong> @_selected.From</div><div><strong>To:</strong> @_selected.To</div><time>@_selected.Date?.LocalDateTime.ToString("f")</time></div></header>
             <iframe class="message-body" title="Email message" sandbox="" referrerpolicy="no-referrer" srcdoc="@(_showImages ? _selected.HtmlBodyWithRemoteImages : _selected.HtmlBody)"></iframe>
         }
     </article>
