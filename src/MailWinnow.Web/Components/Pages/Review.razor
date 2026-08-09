@@ -10,7 +10,6 @@
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
 
-<p class="text-body-secondary small">Messages disappear after a matching sender or domain rule handles them.</p>
 @foreach (var item in _recent)
 {
     <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender</div><div class="review-meta">Newest @item.ReceivedUtc.ToString("u")</div></div></div><div class="decision-actions">

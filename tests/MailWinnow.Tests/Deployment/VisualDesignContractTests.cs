@@ -46,6 +46,9 @@ public sealed class VisualDesignContractTests
             Assert.DoesNotContain("class=\"eyebrow\"", heading);
             Assert.DoesNotContain("<p>", heading);
         }
+
+        var recentReview = Read("src", "MailWinnow.Web", "Components", "Pages", "Review.razor");
+        Assert.DoesNotContain("Messages disappear after a matching sender or domain rule handles them.", recentReview);
     }
 
     private static string Read(params string[] parts) => File.ReadAllText(FindRoot(parts));
