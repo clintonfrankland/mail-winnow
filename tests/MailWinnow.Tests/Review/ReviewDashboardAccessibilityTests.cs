@@ -80,7 +80,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("href=\"/rules\">Manage rules", source);
         Assert.DoesNotContain("name=\"outcome\"", source);
         Assert.Contains("RuleOutcome.Pending", source);
-        Assert.Contains("Messages disappear after a matching sender or domain rule handles them.", source);
+        Assert.DoesNotContain("Messages disappear after a matching sender or domain rule handles them.", source);
 
         var mobileStyles = File.ReadAllText(FindPage(Path.Combine("..", "..", "wwwroot", "mobile.css")));
         Assert.Contains(".decision-rule-row>.decision-retention{flex:0 0 110px;height:48px;min-height:48px;max-width:110px", mobileStyles);
