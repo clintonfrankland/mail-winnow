@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
+using Ganss.Xss;
 using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,8 @@ using Microsoft.Extensions.Options;
 namespace MailWinnow.Infrastructure.Mailboxes;
 
 public sealed record InboxMessageSummary(uint Uid, uint UidValidity, string From, string Subject, DateTimeOffset? Date);
-public sealed record InboxMessageContent(uint Uid, string From, string To, string Subject, DateTimeOffset? Date, string Body, IReadOnlyList<string> RemoteImageUrls);
+public sealed record InboxMessageContent(uint Uid, string From, string To, string Subject, DateTimeOffset? Date,
+    string HtmlBody, string HtmlBodyWithRemoteImages, bool HasRemoteImages);
 public sealed record InboxLoadResult<T>(bool Succeeded, T? Value, string? Error = null);
 
 public interface IInboxReaderService
@@ -19,7 +21,7 @@ public interface IInboxReaderService
     Task<InboxLoadResult<InboxMessageContent>> ReadAsync(ClaimsPrincipal user, uint uid, uint uidValidity, CancellationToken cancellationToken = default);
 }
 
-public sealed class InboxReaderService(
+public sealed partial class InboxReaderService(
     MailWinnowDbContext db,
     IOwnershipAuthorizer ownership,
     ICredentialProtectionService credentials,
@@ -57,10 +59,12 @@ public sealed class InboxReaderService(
         var result = await imap.FetchMessageAsync(Connection(destination), destination.Folder, uid, uidValidity, cancellationToken);
         if (!result.Succeeded || result.Value is null) return new(false, null, result.Error ?? "Unable to read the message.");
         var message = result.Value;
-        var html = message.HtmlBody ?? string.Empty;
-        var body = !string.IsNullOrWhiteSpace(message.TextBody) ? message.TextBody : ToPlainText(html);
-        return new(true, new(uid, message.From.ToString(), message.To.ToString(), message.Subject ?? "(no subject)", message.Date, body,
-            RemoteImages(html)));
+        var html = !string.IsNullOrWhiteSpace(message.HtmlBody) ? message.HtmlBody : PlainTextHtml(message.TextBody ?? string.Empty);
+        html = ResolveEmbeddedImages(message, html);
+        var sanitized = Sanitize(html);
+        var hasRemoteImages = RemoteImageRegex().IsMatch(sanitized);
+        return new(true, new(uid, message.From.ToString(), message.To.ToString(), message.Subject ?? "(no subject)", message.Date,
+            WrapDocument(BlockRemoteImages(sanitized), false), WrapDocument(sanitized, true), hasRemoteImages));
     }
 
     private async Task<DestinationMailbox?> DestinationAsync(ClaimsPrincipal user, CancellationToken token)
@@ -74,13 +78,55 @@ public sealed class InboxReaderService(
         return new(configured.Host, configured.Port, configured.UseSsl, destination.Username,
             credentials.Unprotect(destination.ProtectedCredential, CredentialKind.DestinationImapPassword));
     }
-    private static string ToPlainText(string html)
+    private static string PlainTextHtml(string text)
     {
-        var withoutActive = Regex.Replace(html, "<(script|style)[^>]*>.*?</\\1>", string.Empty, RegexOptions.IgnoreCase | RegexOptions.Singleline, TimeSpan.FromSeconds(1));
-        var withLines = Regex.Replace(withoutActive, "</?(p|div|br|li|tr|h[1-6])[^>]*>", "\n", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
-        return WebUtility.HtmlDecode(Regex.Replace(withLines, "<[^>]+>", string.Empty, RegexOptions.Singleline, TimeSpan.FromSeconds(1))).Trim();
+        return $"<div style=\"white-space:pre-wrap\">{WebUtility.HtmlEncode(text)}</div>";
     }
-    private static IReadOnlyList<string> RemoteImages(string html) => Regex.Matches(html, "<img[^>]+src\\s*=\\s*['\"](?<url>https?://[^'\"]+)['\"]", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1))
-        .Select(x => WebUtility.HtmlDecode(x.Groups["url"].Value)).Where(x => Uri.TryCreate(x, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
-        .Distinct(StringComparer.Ordinal).Take(20).ToArray();
+
+    private static string Sanitize(string html)
+    {
+        var sanitizer = new HtmlSanitizer();
+        sanitizer.AllowedSchemes.Add("data");
+        sanitizer.AllowedAttributes.Add("class");
+        sanitizer.AllowedAttributes.Add("id");
+        return sanitizer.Sanitize(html);
+    }
+
+    private static string ResolveEmbeddedImages(MimeKit.MimeMessage message, string html)
+    {
+        foreach (var part in message.BodyParts.OfType<MimeKit.MimePart>())
+        {
+            if (string.IsNullOrWhiteSpace(part.ContentId) || part.Content is null || !SafeEmbeddedImageTypes.Contains(part.ContentType.MimeType)) continue;
+            using var stream = new MemoryStream();
+            part.Content.DecodeTo(stream);
+            if (stream.Length > MaxEmbeddedImageBytes) continue;
+            var dataUri = $"data:{part.ContentType.MimeType};base64,{Convert.ToBase64String(stream.ToArray())}";
+            html = Regex.Replace(html, $"cid:{Regex.Escape(part.ContentId.Trim('<', '>'))}", dataUri,
+                RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+        }
+        return html;
+    }
+
+    private static string BlockRemoteImages(string html) => RemoteImageRegex().Replace(html, match =>
+        $"{match.Groups["prefix"].Value}{TransparentPixel}{match.Groups["suffix"].Value}");
+
+    private static string WrapDocument(string body, bool allowRemoteImages)
+    {
+        var imageSource = allowRemoteImages ? "https: http: data:" : "data:";
+        return $$"""
+            <!doctype html><html><head><meta charset="utf-8">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src {{imageSource}}; style-src 'unsafe-inline'; font-src data:">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>html,body{margin:0;padding:0;max-width:100%;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}a{word-break:break-word}</style>
+            </head><body>{{body}}</body></html>
+            """;
+    }
+
+    private const int MaxEmbeddedImageBytes = 10 * 1024 * 1024;
+    private const string TransparentPixel = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+    private static readonly HashSet<string> SafeEmbeddedImageTypes = new(StringComparer.OrdinalIgnoreCase)
+        { "image/gif", "image/jpeg", "image/png", "image/webp" };
+
+    [GeneratedRegex("(?<prefix><img\\b[^>]*?\\bsrc\\s*=\\s*[\\\"'])(?:https?:)?//[^\\\"']+(?<suffix>[\\\"'])", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex RemoteImageRegex();
 }

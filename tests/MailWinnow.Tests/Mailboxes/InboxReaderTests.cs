@@ -12,7 +12,7 @@ namespace MailWinnow.Tests.Mailboxes;
 public sealed class InboxReaderTests
 {
     [Fact]
-    public async Task ListsOwnedDestinationNewestFirstAndReadsBodyWithRemoteImagesSeparated()
+    public async Task ListsOwnedDestinationAndBuildsSanitizedIsolatedHtmlMessage()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:"); await connection.OpenAsync();
         await using var db = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(connection).Options); await db.Database.EnsureCreatedAsync();
@@ -27,8 +27,16 @@ public sealed class InboxReaderTests
         Assert.True(list.Succeeded);
         Assert.Equal([2u, 1u], list.Value!.Select(x => x.Uid));
         Assert.True(message.Succeeded);
-        Assert.Equal("Hello world", message.Value!.Body);
-        Assert.Equal(["https://images.test/pixel.png"], message.Value.RemoteImageUrls);
+        Assert.True(message.Value!.HasRemoteImages);
+        Assert.Contains("<strong>world</strong>", message.Value.HtmlBody);
+        Assert.Contains("data:image/gif;base64", message.Value.HtmlBody);
+        Assert.DoesNotContain("https://images.test/pixel.png", message.Value.HtmlBody);
+        Assert.Contains("https://images.test/pixel.png", message.Value.HtmlBodyWithRemoteImages);
+        Assert.Contains("data:image/png;base64,AQID", message.Value.HtmlBodyWithRemoteImages);
+        Assert.DoesNotContain("<script", message.Value.HtmlBodyWithRemoteImages, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("bad()", message.Value.HtmlBodyWithRemoteImages);
+        Assert.DoesNotContain("onclick", message.Value.HtmlBodyWithRemoteImages, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("default-src 'none'", message.Value.HtmlBody);
         Assert.Equal((2u, 42u), imap.FetchedIdentity);
         Assert.Equal("local", imap.Connection!.Username);
     }
@@ -58,7 +66,7 @@ public sealed class InboxReaderTests
         public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint? v = null, CancellationToken t = default) => Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success([
             new(1, null, DateTimeOffset.UtcNow.AddMinutes(-2), "Old <old@test>", null, null, null, null, "Old", null),
             new(2, null, DateTimeOffset.UtcNow, "New <new@test>", null, null, null, null, "New", null)]));
-        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) { FetchedIdentity = (u, v ?? 0); var m = new MimeMessage { Subject = "New", Body = new TextPart("html") { Text = "<p>Hello <strong>world</strong></p><img src=\"https://images.test/pixel.png\"><script>bad()</script>" } }; m.From.Add(MailboxAddress.Parse("New <new@test>")); m.To.Add(MailboxAddress.Parse("Owner <owner@test>")); return Task.FromResult(ImapOperationResult<MimeMessage>.Success(m)); }
+        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) { FetchedIdentity = (u, v ?? 0); var related = new Multipart("related") { new TextPart("html") { Text = "<p onclick=\"steal()\">Hello <strong>world</strong></p><img src=\"https://images.test/pixel.png\"><img src=\"cid:logo@test\"><script>bad()</script>" }, new MimePart("image", "png") { ContentId = "logo@test", Content = new MimeContent(new MemoryStream([1, 2, 3])) } }; var m = new MimeMessage { Subject = "New", Body = related }; m.From.Add(MailboxAddress.Parse("New <new@test>")); m.To.Add(MailboxAddress.Parse("Owner <owner@test>")); return Task.FromResult(ImapOperationResult<MimeMessage>.Success(m)); }
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
         public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default, DateTimeOffset? d = null) => throw new NotSupportedException();
         public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint v, CancellationToken t = default) => throw new NotSupportedException();

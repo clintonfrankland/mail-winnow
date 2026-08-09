@@ -29,9 +29,8 @@
         else
         {
             <header><h2>@_selected.Subject</h2><div><strong>From:</strong> @_selected.From</div><div><strong>To:</strong> @_selected.To</div><time>@_selected.Date?.LocalDateTime.ToString("f")</time></header>
-            @if (_selected.RemoteImageUrls.Count > 0 && !_showImages) { <div class="images-blocked">Remote images are blocked. <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => _showImages = true">Show images</button></div> }
-            <pre class="message-body">@_selected.Body</pre>
-            @if (_showImages) { <div class="remote-images">@foreach (var image in _selected.RemoteImageUrls) { <img src="@image" alt="Remote message image" loading="lazy" referrerpolicy="no-referrer" /> }</div> }
+            @if (_selected.HasRemoteImages && !_showImages) { <div class="images-blocked">Remote images are blocked. <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => _showImages = true">Show images</button></div> }
+            <iframe class="message-body" title="Email message" sandbox="" referrerpolicy="no-referrer" srcdoc="@(_showImages ? _selected.HtmlBodyWithRemoteImages : _selected.HtmlBody)"></iframe>
         }
     </article>
 </div>

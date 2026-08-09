@@ -162,6 +162,10 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("class=\"inbox-reader\"", source);
         Assert.Contains("Remote images are blocked", source);
         Assert.Contains(">Show images</button>", source);
+        Assert.Contains("<iframe class=\"message-body\"", source);
+        Assert.Contains("sandbox=\"\"", source);
+        Assert.Contains("srcdoc=", source);
+        Assert.DoesNotContain("<pre class=\"message-body\"", source);
         Assert.Contains("referrerpolicy=\"no-referrer\"", source);
         Assert.Contains("href=\"inbox\"", navigation);
         Assert.Contains("@_inboxCount inbox messages", navigation);
