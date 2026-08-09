@@ -6,7 +6,7 @@
 @inject IRuleManagementService RuleManagementService
 
 <PageTitle>Message Review - Sender</PageTitle>
-<header class="page-heading"><div class="eyebrow">Decision center</div><h1>Message Review - Sender</h1><p>Review unresolved mail grouped by sender.</p></header>
+<header class="page-heading"><h1>Message Review - Sender</h1></header>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
 

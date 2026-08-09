@@ -5,7 +5,7 @@
 @inject IInboxReaderService InboxReader
 
 <PageTitle>Inbox</PageTitle>
-<header class="page-heading"><div class="eyebrow">Destination mailbox</div><h1>Inbox</h1><p>Read the messages Mail Winnow has delivered.</p></header>
+<header class="page-heading"><h1>Inbox</h1></header>
 @if (!string.IsNullOrWhiteSpace(_error)) { <div class="alert alert-danger" role="alert">@_error</div> }
 
 <div class="inbox-shell" aria-busy="@_busy">

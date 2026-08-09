@@ -4,7 +4,7 @@
 @inject Microsoft.Extensions.Options.IOptions<LocalImapOptions> LocalImap
 
 <PageTitle>Mailboxes</PageTitle>
-<header class="page-heading"><div class="eyebrow">Mail routing</div><h1>Mailboxes</h1><p>Manage the source accounts Mail Winnow monitors and the single local mailbox that receives approved messages.</p></header>
+<header class="page-heading"><h1>Mailboxes</h1></header>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
 

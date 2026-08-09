@@ -31,6 +31,23 @@ public sealed class VisualDesignContractTests
         Assert.Contains("Something went wrong", content);
     }
 
+    [Fact]
+    public void ApplicationPageHeadingsOnlyShowThePageTitle()
+    {
+        string[] pages = ["Inbox", "Rules", "Mailboxes", "Operations", "Review", "ReviewBySender", "Household"];
+
+        foreach (var page in pages)
+        {
+            var source = Read("src", "MailWinnow.Web", "Components", "Pages", $"{page}.razor");
+            var headingStart = source.IndexOf("<header class=\"page-heading\">", StringComparison.Ordinal);
+            var headingEnd = source.IndexOf("</header>", headingStart, StringComparison.Ordinal);
+            var heading = source[headingStart..(headingEnd + "</header>".Length)];
+
+            Assert.DoesNotContain("class=\"eyebrow\"", heading);
+            Assert.DoesNotContain("<p>", heading);
+        }
+    }
+
     private static string Read(params string[] parts) => File.ReadAllText(FindRoot(parts));
 
     private static string FindRoot(params string[] parts)
