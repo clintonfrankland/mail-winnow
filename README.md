@@ -1,5 +1,7 @@
 # MailWinnow
 
+Current shipped version: **1.0.0.1**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
 ## Solution layout
@@ -16,6 +18,8 @@ MailWinnow is a self-hosted email filtering and selective-delivery platform for 
 The hosts may reference Core and Infrastructure. Infrastructure may reference Core. These references establish the dependency direction and prevent circular dependencies.
 
 ## Development conventions
+
+Canonical AI contributor guidance lives in `ai-instructions.md`, with compatibility entry points in `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md`. Every behavior change requires appropriate new or updated tests and a full test-suite run.
 
 Use the .NET 10 SDK and run the solution from the repository root:
 

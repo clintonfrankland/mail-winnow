@@ -94,7 +94,7 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains(".split-action-toggle{flex:0 0 48px;min-width:48px", mobileStyles);
 
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
-        Assert.Contains("@_messageCount pending messages", navigation);
+        Assert.Contains("@CountState.ReviewMessageCount pending messages", navigation);
         Assert.DoesNotContain("> Message review</NavLink>", navigation);
     }
 
@@ -116,17 +116,20 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.True(navigation.IndexOf("Review - Sender", StringComparison.Ordinal) < navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("> Rules</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("> Mailboxes</NavLink>", StringComparison.Ordinal) < navigation.IndexOf("> Sign out</button>", StringComparison.Ordinal));
-        Assert.Contains("@_inboxCount inbox messages", navigation);
-        Assert.Contains("@_messageCount pending messages", navigation);
-        Assert.Contains("@_senderCount pending senders", navigation);
+        Assert.Contains("@CountState.InboxCount inbox messages", navigation);
+        Assert.Contains("@CountState.ReviewMessageCount pending messages", navigation);
+        Assert.Contains("@CountState.ReviewSenderCount pending senders", navigation);
         Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigation);
         Assert.Contains("ScopeFactory.CreateAsyncScope()", navigation);
         Assert.Contains("GetRequiredService<IInboxReaderService>()", navigation);
         Assert.Contains("GetRequiredService<IMessageReviewService>()", navigation);
+        Assert.Contains("CountState.Changed += OnCountsChanged", navigation);
+        Assert.Contains("CountState.Changed -= OnCountsChanged", navigation);
         Assert.Contains(".sidebar-count", navigationStyles);
         Assert.Contains("margin-top:auto", navigationStyles);
         Assert.Contains("class=\"app-version\"", navigation);
         Assert.Contains("typeof(Program).Assembly.GetName().Version", navigation);
+        Assert.DoesNotContain("ToString(3)", navigation);
         Assert.Contains(">v@(AppVersion)</div>", navigation);
         Assert.DoesNotContain(">v@AppVersion</div>", navigation);
         Assert.True(navigation.IndexOf("class=\"app-version\"", StringComparison.Ordinal) < navigation.IndexOf("> Sign out</button>", StringComparison.Ordinal));
@@ -184,9 +187,10 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("await SelectAsync(_messages[Math.Min", source);
         Assert.Contains("referrerpolicy=\"no-referrer\"", source);
         Assert.Contains("href=\"inbox\"", navigation);
-        Assert.Contains("@_inboxCount inbox messages", navigation);
+        Assert.Contains("@CountState.InboxCount inbox messages", navigation);
         Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigation);
         Assert.Contains("ScopeFactory.CreateAsyncScope()", navigation);
+        Assert.Contains("CountState.SetInboxCount(_messages.Count)", source);
     }
 
     [Fact]

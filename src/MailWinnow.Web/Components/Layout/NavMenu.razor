@@ -1,6 +1,8 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IServiceScopeFactory ScopeFactory
+@inject NavigationCountState CountState
+@implements IDisposable
 
 <div class="brand-row"><a class="brand" href="" aria-label="Mail Winnow home"><span class="brand-mark">MW</span><span><strong>Mail Winnow</strong><small>Selective delivery</small></span></a></div>
 <input type="checkbox" title="Navigation menu" class="navbar-toggler" aria-label="Toggle navigation" />
@@ -8,9 +10,9 @@
     <nav class="nav" aria-label="Primary navigation">
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inbox @if (_inboxCount > 0) { <span class="sidebar-count" aria-label="@_inboxCount inbox messages">@_inboxCount</span> }</NavLink></div>
-                <div class="nav-item"><NavLink class="nav-link" href="review" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">✓</span> Review - Recent @if (_messageCount > 0) { <span class="sidebar-count" aria-label="@_messageCount pending messages">@_messageCount</span> }</NavLink></div>
-                <div class="nav-item"><NavLink class="nav-link" href="review/sender"><span class="nav-icon" aria-hidden="true">☷</span> Review - Sender @if (_senderCount > 0) { <span class="sidebar-count" aria-label="@_senderCount pending senders">@_senderCount</span> }</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="inbox"><span class="nav-icon" aria-hidden="true">▤</span> Inbox @if (CountState.InboxCount > 0) { <span class="sidebar-count" aria-label="@CountState.InboxCount inbox messages">@CountState.InboxCount</span> }</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="review" Match="NavLinkMatch.All"><span class="nav-icon" aria-hidden="true">✓</span> Review - Recent @if (CountState.ReviewMessageCount > 0) { <span class="sidebar-count" aria-label="@CountState.ReviewMessageCount pending messages">@CountState.ReviewMessageCount</span> }</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="review/sender"><span class="nav-icon" aria-hidden="true">☷</span> Review - Sender @if (CountState.ReviewSenderCount > 0) { <span class="sidebar-count" aria-label="@CountState.ReviewSenderCount pending senders">@CountState.ReviewSenderCount</span> }</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="rules"><span class="nav-icon" aria-hidden="true">⚙</span> Rules</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="mailboxes"><span class="nav-icon" aria-hidden="true">✉</span> Mailboxes</NavLink></div>
                 <div class="app-version" aria-label="Mail Winnow version @AppVersion">v@(AppVersion)</div>
@@ -22,13 +24,11 @@
 </div>
 
 @code {
-    private int _inboxCount;
-    private int _messageCount;
-    private int _senderCount;
-    private static string AppVersion => typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+    private static string AppVersion => typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
 
     protected override async Task OnInitializedAsync()
     {
+        CountState.Changed += OnCountsChanged;
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         if (user.Identity?.IsAuthenticated != true)
         {
@@ -40,14 +40,18 @@
             var inbox = await inboxScope.ServiceProvider.GetRequiredService<IInboxReaderService>().CountAsync(user);
             if (inbox.Succeeded)
             {
-                _inboxCount = inbox.Value;
+                CountState.SetInboxCount(inbox.Value);
             }
         }
 
         await using var reviewScope = ScopeFactory.CreateAsyncScope();
         var messages = await reviewScope.ServiceProvider.GetRequiredService<IMessageReviewService>()
             .GetRecentAsync(user, new MessageReviewFilter(null, RuleOutcome.Pending, null));
-        _messageCount = messages.Count;
-        _senderCount = messages.Select(message => message.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        CountState.SetReviewCounts(messages.Count,
+            messages.Select(message => message.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
+
+    private void OnCountsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => CountState.Changed -= OnCountsChanged;
 }

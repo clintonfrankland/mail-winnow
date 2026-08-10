@@ -4,6 +4,7 @@
 @using System.Security.Claims
 @inject IInboxReaderService InboxReader
 @inject IInboxDeletionQueue DeletionQueue
+@inject NavigationCountState CountState
 
 <PageTitle>Inbox</PageTitle>
 <header class="page-heading"><h1>Inbox</h1></header>
@@ -53,7 +54,7 @@
     private string ViewerKey => $"{_selected?.Uid}:{_showImages}";
     protected override async Task OnInitializedAsync() { _user = (await AuthenticationStateTask).User; await LoadAsync(); }
     private void ShowImages() => _showImages = true;
-    private async Task LoadAsync() { _busy = true; _error = null; try { var result = await InboxReader.ListAsync(_user); if (result.Succeeded) _messages = result.Value ?? []; else _error = result.Error; } finally { _busy = false; } }
+    private async Task LoadAsync() { _busy = true; _error = null; try { var result = await InboxReader.ListAsync(_user); if (result.Succeeded) { _messages = result.Value ?? []; CountState.SetInboxCount(_messages.Count); } else _error = result.Error; } finally { _busy = false; } }
     private async Task SelectAsync(InboxMessageSummary summary) { _busy = true; _error = null; _showImages = false; try { var result = await InboxReader.ReadAsync(_user, summary.Uid, summary.UidValidity); if (result.Succeeded) _selected = result.Value; else _error = result.Error; } finally { _busy = false; } }
     private async Task DeleteSelectedAsync()
     {
@@ -62,6 +63,7 @@
         if (deletedIndex < 0) return;
         var deleted = _messages[deletedIndex];
         _messages = _messages.Where(x => x.Uid != deleted.Uid).ToArray();
+        CountState.SetInboxCount(_messages.Count);
         _selected = null;
         _showImages = false;
         StateHasChanged();
@@ -72,6 +74,7 @@
             var restored = _messages.ToList();
             restored.Insert(Math.Min(deletedIndex, restored.Count), deleted);
             _messages = restored;
+            CountState.SetInboxCount(_messages.Count);
             await SelectAsync(deleted);
             _error = queued.Message;
             return;

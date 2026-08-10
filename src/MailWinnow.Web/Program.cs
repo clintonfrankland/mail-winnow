@@ -4,6 +4,7 @@ using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Web.Security;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using MailWinnow.Web.Components.Layout;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +26,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 builder.Services.AddMailWinnowAuthorization();
 builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<NavigationCountState>();
 
 var app = builder.Build();
 
