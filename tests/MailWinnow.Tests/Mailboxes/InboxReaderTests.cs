@@ -25,7 +25,10 @@ public sealed class InboxReaderTests
         var message = await service.ReadAsync(Principal("owner"), 2, 42);
 
         Assert.True(list.Succeeded);
-        Assert.Equal([2u, 1u], list.Value!.Select(x => x.Uid));
+        var listed = Assert.IsAssignableFrom<IReadOnlyList<InboxMessageSummary>>(list.Value);
+        Assert.Equal([2u, 1u], listed.Select(x => x.Uid));
+        Assert.All(listed, item => Assert.NotEqual(default, item.Date));
+        Assert.Equal(imap.NewestInternalDate, listed[0].Date);
         Assert.True(message.Succeeded);
         Assert.True(message.Value!.HasRemoteImages);
         Assert.Contains("<strong>world</strong>", message.Value.HtmlBody);
@@ -60,12 +63,17 @@ public sealed class InboxReaderTests
     private sealed class Protector : ICredentialProtectionService { public string Protect(string value, CredentialKind kind) => value; public string Unprotect(string value, CredentialKind kind) => value; }
     private sealed class FakeImap : IImapConnectionService
     {
+        public DateTimeOffset NewestInternalDate { get; } = DateTimeOffset.UtcNow;
         public ImapConnectionSettings? Connection { get; private set; }
         public (uint Uid, uint Validity) FetchedIdentity { get; private set; }
         public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings c, string f, CancellationToken t = default) { Connection = c; return Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(new(42, [1, 2]))); }
-        public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint? v = null, CancellationToken t = default) => Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success([
-            new(1, null, DateTimeOffset.UtcNow.AddMinutes(-2), "Old <old@test>", null, null, null, null, "Old", null),
-            new(2, null, DateTimeOffset.UtcNow, "New <new@test>", null, null, null, null, "New", null)]));
+        public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint? v = null, CancellationToken t = default)
+        {
+            ImapMessageHeader[] headers = [
+                new(1, null, DateTimeOffset.UtcNow.AddMinutes(-2), "Old <old@test>", null, null, null, null, "Old", null, DateTimeOffset.UtcNow.AddMinutes(-1)),
+                new(2, null, null, "New <new@test>", null, null, null, null, "New", null, NewestInternalDate)];
+            return Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success(headers.Where(x => u.Contains(x.Uid)).ToArray()));
+        }
         public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) { FetchedIdentity = (u, v ?? 0); var related = new Multipart("related") { new TextPart("html") { Text = "<p onclick=\"steal()\">Hello <strong>world</strong></p><img src=\"https://images.test/pixel.png\"><img src=\"cid:logo@test\"><script>bad()</script>" }, new MimePart("image", "png") { ContentId = "logo@test", Content = new MimeContent(new MemoryStream([1, 2, 3])) } }; var m = new MimeMessage { Subject = "New", Body = related }; m.From.Add(MailboxAddress.Parse("New <new@test>")); m.To.Add(MailboxAddress.Parse("Owner <owner@test>")); return Task.FromResult(ImapOperationResult<MimeMessage>.Success(m)); }
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
         public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default, DateTimeOffset? d = null) => throw new NotSupportedException();

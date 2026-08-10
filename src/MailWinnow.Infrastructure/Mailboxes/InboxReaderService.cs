@@ -9,8 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace MailWinnow.Infrastructure.Mailboxes;
 
-public sealed record InboxMessageSummary(uint Uid, uint UidValidity, string From, string Subject, DateTimeOffset? Date);
-public sealed record InboxMessageContent(uint Uid, string From, string To, string Subject, DateTimeOffset? Date,
+public sealed record InboxMessageSummary(uint Uid, uint UidValidity, string From, string Subject, DateTimeOffset Date);
+public sealed record InboxMessageContent(uint Uid, string From, string To, string Subject, DateTimeOffset Date,
     string HtmlBody, string HtmlBodyWithRemoteImages, bool HasRemoteImages);
 public sealed record InboxLoadResult<T>(bool Succeeded, T? Value, string? Error = null);
 
@@ -48,22 +48,28 @@ public sealed partial class InboxReaderService(
         var uids = snapshot.Value.Uids.OrderByDescending(x => x).Take(200).ToArray();
         var headers = await imap.FetchHeadersAsync(connection, destination.Folder, uids, snapshot.Value.UidValidity, cancellationToken);
         if (!headers.Succeeded || headers.Value is null) return new(false, null, headers.Error ?? "Unable to read message headers.");
-        return new(true, headers.Value.OrderByDescending(x => x.Date).ThenByDescending(x => x.Uid)
-            .Select(x => new InboxMessageSummary(x.Uid, snapshot.Value.UidValidity, x.From ?? "(unknown sender)", x.Subject ?? "(no subject)", x.Date)).ToArray());
+        return new(true, headers.Value.Select(x => new InboxMessageSummary(x.Uid, snapshot.Value.UidValidity,
+                x.From ?? "(unknown sender)", x.Subject ?? "(no subject)", ResolveDate(x)))
+            .OrderByDescending(x => x.Date).ThenByDescending(x => x.Uid).ToArray());
     }
 
     public async Task<InboxLoadResult<InboxMessageContent>> ReadAsync(ClaimsPrincipal user, uint uid, uint uidValidity, CancellationToken cancellationToken = default)
     {
         var destination = await DestinationAsync(user, cancellationToken);
         if (destination is null) return new(false, null, "Configure and enable a destination mailbox first.");
-        var result = await imap.FetchMessageAsync(Connection(destination), destination.Folder, uid, uidValidity, cancellationToken);
+        var connection = Connection(destination);
+        var header = await imap.FetchHeadersAsync(connection, destination.Folder, [uid], uidValidity, cancellationToken);
+        var result = await imap.FetchMessageAsync(connection, destination.Folder, uid, uidValidity, cancellationToken);
         if (!result.Succeeded || result.Value is null) return new(false, null, result.Error ?? "Unable to read the message.");
         var message = result.Value;
         var html = !string.IsNullOrWhiteSpace(message.HtmlBody) ? message.HtmlBody : PlainTextHtml(message.TextBody ?? string.Empty);
         html = ResolveEmbeddedImages(message, html);
         var sanitized = Sanitize(html);
         var hasRemoteImages = RemoteImageRegex().IsMatch(sanitized);
-        return new(true, new(uid, message.From.ToString(), message.To.ToString(), message.Subject ?? "(no subject)", message.Date,
+        var date = header.Succeeded && header.Value?.SingleOrDefault() is { } fetchedHeader
+            ? ResolveDate(fetchedHeader)
+            : message.Date == default ? DateTimeOffset.UnixEpoch : message.Date;
+        return new(true, new(uid, message.From.ToString(), message.To.ToString(), message.Subject ?? "(no subject)", date,
             WrapDocument(BlockRemoteImages(sanitized), false), WrapDocument(sanitized, true), hasRemoteImages));
     }
 
@@ -78,6 +84,8 @@ public sealed partial class InboxReaderService(
         return new(configured.Host, configured.Port, configured.UseSsl, destination.Username,
             credentials.Unprotect(destination.ProtectedCredential, CredentialKind.DestinationImapPassword));
     }
+    private static DateTimeOffset ResolveDate(ImapMessageHeader header) =>
+        header.Date ?? header.InternalDate ?? DateTimeOffset.UnixEpoch;
     private static string PlainTextHtml(string text)
     {
         return $"<div style=\"white-space:pre-wrap\">{WebUtility.HtmlEncode(text)}</div>";

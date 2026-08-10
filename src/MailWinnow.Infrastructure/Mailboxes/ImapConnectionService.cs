@@ -21,7 +21,7 @@ public interface IImapConnectionService
 }
 
 public sealed record ImapConnectionSettings(string Host, int Port, bool UseSsl, string Username, string Password, TimeSpan? Timeout = null);
-public sealed record ImapMessageHeader(uint Uid, string? MessageId, DateTimeOffset? Date, string? From, string? Sender, string? ReplyTo, string? To, string? Cc, string? Subject, string? AuthenticationResults);
+public sealed record ImapMessageHeader(uint Uid, string? MessageId, DateTimeOffset? Date, string? From, string? Sender, string? ReplyTo, string? To, string? Cc, string? Subject, string? AuthenticationResults, DateTimeOffset? InternalDate = null);
 public sealed record ImapFolderSnapshot(uint UidValidity, IReadOnlyList<uint> Uids);
 public enum ImapFailureKind { None, Authentication, Connection, Timeout, MissingFolder, UidValidityChanged, Throttled, Transient, Unexpected }
 public sealed record ImapOperationResult<T>(bool Succeeded, T? Value, ImapFailureKind FailureKind = ImapFailureKind.None, string? Error = null)
@@ -167,8 +167,8 @@ internal sealed class MailKitImapClientSession : IImapClientSession
     {
         var folder = await OpenFolderAsync(folderName, FolderAccess.ReadOnly, expectedUidValidity, cancellationToken);
         // The MailKit request includes RFC headers only, never a body section.
-        var summaries = await folder.FetchAsync(uids.Select(x => new UniqueId(x)).ToArray(), MessageSummaryItems.UniqueId | MessageSummaryItems.Headers, HeaderFields, cancellationToken);
-        return summaries.Select(x => new ImapMessageHeader(x.UniqueId.Id, Header(x, "Message-ID"), ParseDate(Header(x, "Date")), Header(x, "From"), Header(x, "Sender"), Header(x, "Reply-To"), Header(x, "To"), Header(x, "Cc"), Header(x, "Subject"), Header(x, "Authentication-Results"))).ToArray();
+        var summaries = await folder.FetchAsync(uids.Select(x => new UniqueId(x)).ToArray(), MessageSummaryItems.UniqueId | MessageSummaryItems.Headers | MessageSummaryItems.InternalDate, HeaderFields, cancellationToken);
+        return summaries.Select(x => new ImapMessageHeader(x.UniqueId.Id, Header(x, "Message-ID"), ParseDate(Header(x, "Date")), Header(x, "From"), Header(x, "Sender"), Header(x, "Reply-To"), Header(x, "To"), Header(x, "Cc"), Header(x, "Subject"), Header(x, "Authentication-Results"), x.InternalDate)).ToArray();
     }
     public async Task<MimeMessage> FetchMessageAsync(string folderName, uint uid, uint? expectedUidValidity, CancellationToken cancellationToken) => await (await OpenFolderAsync(folderName, FolderAccess.ReadOnly, expectedUidValidity, cancellationToken)).GetMessageAsync(new UniqueId(uid), cancellationToken);
     public async Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken, DateTimeOffset? receivedUtc = null)
