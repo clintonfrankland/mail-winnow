@@ -203,6 +203,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("align-items:stretch", inboxStyles);
         Assert.Contains("justify-content:flex-start", inboxStyles);
         Assert.Contains("overflow-x:hidden", inboxStyles);
+        Assert.Contains("height:calc(100dvh - 161px)", inboxStyles);
+        Assert.Contains("grid-template-rows:auto auto minmax(0,1fr)", inboxStyles);
+        Assert.Contains("height:100%;min-height:0", inboxStyles);
         Assert.Contains("class=\"message-row-content\"", File.ReadAllText(FindPage("Inbox.razor")));
         Assert.Contains(".message-row-content strong,.message-row-content span,.message-row-content time", inboxStyles);
         Assert.Contains("@media(max-width:520px)", inboxStyles);
