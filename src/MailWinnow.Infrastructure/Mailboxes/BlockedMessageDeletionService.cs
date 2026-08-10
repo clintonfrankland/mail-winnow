@@ -2,6 +2,7 @@ using MailWinnow.Core.Rules;
 using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace MailWinnow.Infrastructure.Mailboxes;
 
@@ -11,11 +12,12 @@ public interface IBlockedMessageDeletionService
     Task DeleteAsync(Guid headerId, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Durably removes blocked messages by their cataloged source UID without ever fetching or appending a body.</summary>
+/// <summary>Durably moves blocked messages from the source mailbox into the destination Blocked folder.</summary>
 public sealed class BlockedMessageDeletionService(
     MailWinnowDbContext db,
     ICredentialProtectionService credentials,
     IImapConnectionService imap,
+    IOptions<LocalImapOptions> localImap,
     IAuditRecorder? audit = null) : IBlockedMessageDeletionService
 {
     private static readonly TimeSpan StaleClaimAge = TimeSpan.FromMinutes(5);
@@ -47,14 +49,31 @@ public sealed class BlockedMessageDeletionService(
         var header = await db.SourceMessageHeaders.SingleAsync(x => x.Id == headerId, cancellationToken);
         await db.Entry(header).ReloadAsync(cancellationToken); // ExecuteUpdate bypasses tracked values.
         var source = await db.SourceMailboxes.SingleAsync(x => x.Id == header.SourceMailboxId, cancellationToken);
-        var connection = new ImapConnectionSettings(source.Host, source.Port, source.UseSsl, source.Username,
+        var sourceConnection = new ImapConnectionSettings(source.Host, source.Port, source.UseSsl, source.Username,
             credentials.Unprotect(source.ProtectedCredential, CredentialKind.SourceImapPassword));
-        var deleted = await imap.DeleteAndExpungeAsync(connection, header.FolderName, [header.Uid], header.UidValidity, cancellationToken);
+        if (header.BlockedDestinationUid is null)
+        {
+            var destination = await db.DestinationMailboxes.SingleOrDefaultAsync(x => x.OwnerUserId == source.OwnerUserId && x.Enabled, cancellationToken);
+            if (destination is null) { await FailAsync(header, "No enabled destination mailbox is configured.", cancellationToken); return; }
+            var local = localImap.Value;
+            var destinationConnection = new ImapConnectionSettings(local.Host, local.Port, local.UseSsl, destination.Username,
+                credentials.Unprotect(destination.ProtectedCredential, CredentialKind.DestinationImapPassword));
+            var fetched = await imap.FetchMessageAsync(sourceConnection, header.FolderName, header.Uid, header.UidValidity, cancellationToken);
+            if (!fetched.Succeeded) { await FailAsync(header, fetched.Error ?? "The blocked source message could not be fetched.", cancellationToken); return; }
+            var appended = await imap.AppendMessageAsync(destinationConnection, "Blocked", fetched.Value!, cancellationToken, header.ReceivedUtc);
+            if (!appended.Succeeded || appended.Value is null)
+            { await FailAsync(header, appended.Error ?? "The blocked message could not be copied to the destination.", cancellationToken); return; }
+            header.BlockedDestinationMailboxId = destination.Id;
+            header.BlockedDestinationUid = appended.Value;
+            var confirmed = await imap.GetFolderSnapshotAsync(destinationConnection, "Blocked", cancellationToken);
+            header.BlockedDestinationUidValidity = confirmed.Succeeded ? confirmed.Value!.UidValidity : null;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var deleted = await imap.DeleteAndExpungeAsync(sourceConnection, header.FolderName, [header.Uid], header.UidValidity, cancellationToken);
         if (!deleted.Succeeded)
         {
-            header.BlockedSourceDeletionStartedUtc = null;
-            header.BlockedSourceDeletionError = deleted.Error ?? "The blocked source message could not be deleted.";
-            await db.SaveChangesAsync(cancellationToken);
+            await FailAsync(header, deleted.Error ?? "The blocked source message could not be deleted.", cancellationToken);
             return;
         }
 
@@ -62,6 +81,13 @@ public sealed class BlockedMessageDeletionService(
         header.BlockedSourceDeletionStartedUtc = null;
         header.BlockedSourceDeletionError = null;
         await db.SaveChangesAsync(cancellationToken);
-        if (audit is not null) await audit.RecordAsync("blocked-source.deleted", null, source.OwnerUserId, "header", header.Id.ToString("N"), cancellationToken: cancellationToken);
+        if (audit is not null) await audit.RecordAsync("blocked-source.moved", null, source.OwnerUserId, "header", header.Id.ToString("N"), cancellationToken: cancellationToken);
+    }
+
+    private async Task FailAsync(SourceMessageHeader header, string message, CancellationToken token)
+    {
+        header.BlockedSourceDeletionStartedUtc = null;
+        header.BlockedSourceDeletionError = message.Length <= 512 ? message : "The blocked message could not be moved.";
+        await db.SaveChangesAsync(token);
     }
 }

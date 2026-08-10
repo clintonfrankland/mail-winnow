@@ -58,6 +58,29 @@ public sealed class ImapConnectionServiceTests
     }
 
     [Fact]
+    public async Task Move_creates_destination_contract_and_passes_only_distinct_uids()
+    {
+        var session = new ScriptedSession();
+        var result = await new ImapConnectionService(new ScriptedFactory(session)).MoveToFolderAsync(Connection, "INBOX", [4, 4, 9, 0], 42, "Trash");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, result.Value);
+        Assert.Equal(["connect:StartTlsRequired", "authenticate", "move:INBOX:Trash:4,9", "disconnect"], session.Commands);
+    }
+
+    [Fact]
+    public async Task Retention_passes_exact_cutoff_and_folder_creation_policy()
+    {
+        var cutoff = new DateTimeOffset(2026, 7, 27, 12, 0, 0, TimeSpan.Zero);
+        var session = new ScriptedSession { RetentionDeleted = 3 };
+        var result = await new ImapConnectionService(new ScriptedFactory(session)).DeleteOlderThanAsync(Connection, "Blocked", cutoff, true);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(3, result.Value);
+        Assert.Equal(["connect:StartTlsRequired", "authenticate", $"retention:Blocked:{cutoff:O}:True", "disconnect"], session.Commands);
+    }
+
+    [Fact]
     public async Task Transient_operational_failure_is_sanitized_and_cancellation_is_forwarded()
     {
         var session = new ScriptedSession { HeaderException = new IOException("private host details") };
@@ -88,6 +111,9 @@ public sealed class ImapConnectionServiceTests
         public Task<MimeMessage> FetchMessageAsync(string folder, uint uid, uint? uidValidity, CancellationToken token) => Task.FromResult(new MimeMessage());
         public Task<uint?> AppendMessageAsync(string folder, MimeMessage message, CancellationToken token, DateTimeOffset? receivedUtc = null) { Commands.Add($"append:{folder}"); AppendedMessage = message; return Task.FromResult(AppendedUid); }
         public Task DeleteAndExpungeAsync(string folder, IReadOnlyList<uint> uids, uint expectedUidValidity, CancellationToken token) { Commands.Add($"delete-expunge:{folder}:{string.Join(',', uids)}"); DeletedUids = uids; return Task.CompletedTask; }
+        public Task MoveToFolderAsync(string sourceFolder, IReadOnlyList<uint> uids, uint expectedUidValidity, string destinationFolder, CancellationToken token) { Commands.Add($"move:{sourceFolder}:{destinationFolder}:{string.Join(',', uids)}"); return Task.CompletedTask; }
+        public int RetentionDeleted { get; init; }
+        public Task<int> DeleteOlderThanAsync(string folder, DateTimeOffset cutoff, bool createIfMissing, CancellationToken token) { Commands.Add($"retention:{folder}:{cutoff:O}:{createIfMissing}"); return Task.FromResult(RetentionDeleted); }
         public Task DisconnectAsync(CancellationToken token) { Commands.Add("disconnect"); return Task.CompletedTask; }
         public Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken token) => Task.FromResult(new ImapFolderSnapshot(1, []));
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

@@ -4,6 +4,7 @@ using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MimeKit;
 
 namespace MailWinnow.Tests.Mailboxes;
@@ -11,7 +12,7 @@ namespace MailWinnow.Tests.Mailboxes;
 public sealed class BlockedMessageDeletionTests
 {
     [Fact]
-    public async Task OnlyBlockedHeadersAreDueAndExactSourceIdentityIsDeleted()
+    public async Task OnlyBlockedHeadersAreDueAndMessageIsCopiedToBlockedBeforeExactSourceDeletion()
     {
         await using var fixture = await Fixture.CreateAsync();
         var pending = await fixture.AddHeaderAsync(RuleOutcome.Pending, 11);
@@ -27,7 +28,11 @@ public sealed class BlockedMessageDeletionTests
         Assert.Equal("INBOX", fixture.Imap.DeletedFolder);
         Assert.Equal(13u, fixture.Imap.DeletedUid);
         Assert.Equal(42u, fixture.Imap.DeletedUidValidity);
-        Assert.NotNull((await fixture.Db.SourceMessageHeaders.FindAsync(blocked.Id))!.BlockedSourceDeletedUtc);
+        var stored = (await fixture.Db.SourceMessageHeaders.FindAsync(blocked.Id))!;
+        Assert.NotNull(stored.BlockedSourceDeletedUtc);
+        Assert.Equal("Blocked", fixture.Imap.AppendedFolder);
+        Assert.Equal(1, fixture.Imap.AppendCalls);
+        Assert.Equal((uint)91, stored.BlockedDestinationUid);
         Assert.Empty(await fixture.Service.GetDueHeaderIdsAsync());
     }
 
@@ -50,6 +55,7 @@ public sealed class BlockedMessageDeletionTests
         await fixture.Service.DeleteAsync(blocked.Id);
         Assert.NotNull((await fixture.Db.SourceMessageHeaders.FindAsync(blocked.Id))!.BlockedSourceDeletedUtc);
         Assert.Equal(2, fixture.Imap.DeleteCalls);
+        Assert.Equal(1, fixture.Imap.AppendCalls);
     }
 
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db, SourceMailbox source, FakeImap imap, BlockedMessageDeletionService service) : IAsyncDisposable
@@ -65,9 +71,11 @@ public sealed class BlockedMessageDeletionTests
             await db.Database.EnsureCreatedAsync();
             var source = new SourceMailbox { OwnerUserId = "owner", DisplayName = "source", Host = "source.test", Port = 993, UseSsl = true, Username = "owner", ProtectedCredential = "secret" };
             db.SourceMailboxes.Add(source);
+            db.DestinationMailboxes.Add(new DestinationMailbox { OwnerUserId = "owner", Username = "local-owner", ProtectedCredential = "secret", Folder = "INBOX" });
             await db.SaveChangesAsync();
             var imap = new FakeImap();
-            return new(connection, db, source, imap, new BlockedMessageDeletionService(db, new Protector(), imap));
+            return new(connection, db, source, imap, new BlockedMessageDeletionService(db, new Protector(), imap,
+                Options.Create(new LocalImapOptions { Host = "local.test", Port = 993, UseSsl = true })));
         }
         public async Task<SourceMessageHeader> AddHeaderAsync(RuleOutcome outcome, uint uid)
         {
@@ -84,6 +92,8 @@ public sealed class BlockedMessageDeletionTests
     {
         public bool DeleteFailure { get; set; }
         public int DeleteCalls { get; private set; }
+        public int AppendCalls { get; private set; }
+        public string? AppendedFolder { get; private set; }
         public string? DeletedFolder { get; private set; }
         public uint DeletedUid { get; private set; }
         public uint DeletedUidValidity { get; private set; }
@@ -94,9 +104,9 @@ public sealed class BlockedMessageDeletionTests
         }
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings connection, string folderName, uint uid, uint? expectedUidValidity = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default, DateTimeOffset? receivedUtc = null) => throw new NotSupportedException();
+        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings connection, string folderName, uint uid, uint? expectedUidValidity = null, CancellationToken cancellationToken = default) => Task.FromResult(ImapOperationResult<MimeMessage>.Success(new MimeMessage()));
+        public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default, DateTimeOffset? receivedUtc = null) { AppendCalls++; AppendedFolder = folderName; return Task.FromResult(ImapOperationResult<uint?>.Success(91)); }
         public Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default) => Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(new(73, [])));
     }
 }

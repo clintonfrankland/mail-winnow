@@ -44,6 +44,7 @@ public sealed class InboxDeletionQueueTests
 
             Assert.Equal([1u, 2u, 3u, 4u, 5u], imap.DeletedUids);
             Assert.Equal(1, imap.MaximumConcurrency);
+            Assert.All(imap.Moves, move => Assert.Equal(("INBOX", "Trash"), move));
         }
         finally
         {
@@ -58,19 +59,23 @@ public sealed class InboxDeletionQueueTests
     {
         private int _active;
         public List<uint> DeletedUids { get; } = [];
+        public List<(string Source, string Destination)> Moves { get; } = [];
         public int MaximumConcurrency { get; private set; }
         public TaskCompletionSource AllDeleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint expectedUidValidity, CancellationToken cancellationToken = default)
+        public async Task<ImapOperationResult<int>> MoveToFolderAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint expectedUidValidity, string destinationFolderName, CancellationToken cancellationToken = default)
         {
             var active = Interlocked.Increment(ref _active);
             MaximumConcurrency = Math.Max(MaximumConcurrency, active);
             await Task.Delay(20, cancellationToken);
             DeletedUids.Add(Assert.Single(uids));
+            Moves.Add((folderName, destinationFolderName));
             Interlocked.Decrement(ref _active);
             if (DeletedUids.Count == 5) AllDeleted.TrySetResult();
             return ImapOperationResult<int>.Success(1);
         }
+
+        public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint expectedUidValidity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();

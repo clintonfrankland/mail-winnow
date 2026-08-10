@@ -8,6 +8,7 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var nextRetentionUtc = DateTimeOffset.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -84,6 +85,12 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
                         logger.LogWarning(exception, "Delivered message cleanup failed for delivery {DeliveryId}", id);
                     }
                 });
+                if (DateTimeOffset.UtcNow >= nextRetentionUtc)
+                {
+                    await using var retentionScope = scopes.CreateAsyncScope();
+                    await retentionScope.ServiceProvider.GetRequiredService<IMailboxRetentionService>().RunAsync(stoppingToken);
+                    nextRetentionUtc = DateTimeOffset.UtcNow.AddHours(1);
+                }
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
             {

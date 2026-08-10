@@ -52,6 +52,9 @@ public sealed class SourceMessageHeader
     public DateTimeOffset? BlockedSourceDeletionStartedUtc { get; set; }
     public DateTimeOffset? BlockedSourceDeletedUtc { get; set; }
     public string? BlockedSourceDeletionError { get; set; }
+    public Guid? BlockedDestinationMailboxId { get; set; }
+    public uint? BlockedDestinationUid { get; set; }
+    public uint? BlockedDestinationUidValidity { get; set; }
 }
 
 public sealed class DestinationMailbox

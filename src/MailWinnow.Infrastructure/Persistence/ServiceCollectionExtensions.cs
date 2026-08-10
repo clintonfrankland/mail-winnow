@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IInboxDeletionQueue>(provider => provider.GetRequiredService<InboxDeletionQueue>());
         services.AddScoped<IMessageDeliveryService, MessageDeliveryService>();
         services.AddScoped<IBlockedMessageDeletionService, BlockedMessageDeletionService>();
+        services.AddScoped<IMailboxRetentionService, MailboxRetentionService>();
         services.AddScoped<IAdministrationService, AdministrationService>();
         services.AddScoped<IAuditRecorder>(provider => provider.GetRequiredService<IAdministrationService>());
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();

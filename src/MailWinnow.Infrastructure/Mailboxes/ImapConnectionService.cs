@@ -14,6 +14,8 @@ public interface IImapConnectionService
     Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings connection, string folderName, uint uid, uint? expectedUidValidity = null, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings connection, string folderName, MimeMessage message, CancellationToken cancellationToken = default, DateTimeOffset? receivedUtc = null);
     Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> expiredUids, uint expectedUidValidity, CancellationToken cancellationToken = default);
+    Task<ImapOperationResult<int>> MoveToFolderAsync(ImapConnectionSettings connection, string sourceFolderName, IReadOnlyList<uint> uids, uint expectedUidValidity, string destinationFolderName, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<ImapOperationResult<int>> DeleteOlderThanAsync(ImapConnectionSettings connection, string folderName, DateTimeOffset cutoffUtc, bool createFolderIfMissing = false, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     Task<ImapOperationResult<bool>> TestConnectionAsync(ImapConnectionSettings connection, CancellationToken cancellationToken = default);
     Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default);
 }
@@ -41,6 +43,8 @@ public interface IImapClientSession : IAsyncDisposable
     Task<MimeMessage> FetchMessageAsync(string folderName, uint uid, uint? expectedUidValidity, CancellationToken cancellationToken);
     Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken, DateTimeOffset? receivedUtc = null);
     Task DeleteAndExpungeAsync(string folderName, IReadOnlyList<uint> uids, uint expectedUidValidity, CancellationToken cancellationToken);
+    Task MoveToFolderAsync(string sourceFolderName, IReadOnlyList<uint> uids, uint expectedUidValidity, string destinationFolderName, CancellationToken cancellationToken) => throw new NotSupportedException();
+    Task<int> DeleteOlderThanAsync(string folderName, DateTimeOffset cutoffUtc, bool createFolderIfMissing, CancellationToken cancellationToken) => throw new NotSupportedException();
     Task DisconnectAsync(CancellationToken cancellationToken);
     Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken cancellationToken);
 }
@@ -86,6 +90,17 @@ public sealed class ImapConnectionService(IImapClientSessionFactory? sessions = 
             ? Task.FromResult(ImapOperationResult<int>.Success(0))
             : WithSessionAsync(connection, async (session, token) => { await session.DeleteAndExpungeAsync(folderName, ids, expectedUidValidity, token); return ids.Length; }, cancellationToken);
     }
+
+    public Task<ImapOperationResult<int>> MoveToFolderAsync(ImapConnectionSettings connection, string sourceFolderName, IReadOnlyList<uint> uids, uint expectedUidValidity, string destinationFolderName, CancellationToken cancellationToken = default)
+    {
+        var ids = uids.Where(x => x > 0).Distinct().ToArray();
+        return ids.Length == 0
+            ? Task.FromResult(ImapOperationResult<int>.Success(0))
+            : WithSessionAsync(connection, async (session, token) => { await session.MoveToFolderAsync(sourceFolderName, ids, expectedUidValidity, destinationFolderName, token); return ids.Length; }, cancellationToken);
+    }
+
+    public Task<ImapOperationResult<int>> DeleteOlderThanAsync(ImapConnectionSettings connection, string folderName, DateTimeOffset cutoffUtc, bool createFolderIfMissing = false, CancellationToken cancellationToken = default) =>
+        WithSessionAsync(connection, (session, token) => session.DeleteOlderThanAsync(folderName, cutoffUtc, createFolderIfMissing, token), cancellationToken);
 
     /// <summary>Maps provider failures to safe categories without retaining server response text.</summary>
     public static ImapFailureKind ClassifyFailure(Exception exception) => Failure<object>(exception, CancellationToken.None).FailureKind;
@@ -158,7 +173,8 @@ internal sealed class MailKitImapClientSession : IImapClientSession
     public async Task<MimeMessage> FetchMessageAsync(string folderName, uint uid, uint? expectedUidValidity, CancellationToken cancellationToken) => await (await OpenFolderAsync(folderName, FolderAccess.ReadOnly, expectedUidValidity, cancellationToken)).GetMessageAsync(new UniqueId(uid), cancellationToken);
     public async Task<uint?> AppendMessageAsync(string folderName, MimeMessage message, CancellationToken cancellationToken, DateTimeOffset? receivedUtc = null)
     {
-        var folder = await OpenFolderAsync(folderName, FolderAccess.ReadWrite, null, cancellationToken);
+        var folder = await GetOrCreateFolderAsync(folderName, cancellationToken);
+        await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
         var uid = receivedUtc is { } date
             ? await folder.AppendAsync(message, MessageFlags.None, date, cancellationToken)
             : await folder.AppendAsync(message, MessageFlags.None, cancellationToken);
@@ -171,6 +187,25 @@ internal sealed class MailKitImapClientSession : IImapClientSession
         await folder.AddFlagsAsync(ids, MessageFlags.Deleted, true, cancellationToken);
         await folder.ExpungeAsync(ids, cancellationToken); // UID EXPUNGE is restricted to the supplied IDs.
     }
+    public async Task MoveToFolderAsync(string sourceFolderName, IReadOnlyList<uint> uids, uint expectedUidValidity, string destinationFolderName, CancellationToken cancellationToken)
+    {
+        var source = await OpenFolderAsync(sourceFolderName, FolderAccess.ReadWrite, expectedUidValidity, cancellationToken);
+        var destination = await GetOrCreateFolderAsync(destinationFolderName, cancellationToken);
+        await source.MoveToAsync(uids.Select(x => new UniqueId(x)).ToArray(), destination, cancellationToken);
+    }
+    public async Task<int> DeleteOlderThanAsync(string folderName, DateTimeOffset cutoffUtc, bool createFolderIfMissing, CancellationToken cancellationToken)
+    {
+        IMailFolder folder;
+        try { folder = await _client.GetFolderAsync(folderName, cancellationToken); }
+        catch (FolderNotFoundException) when (createFolderIfMissing) { folder = await GetOrCreateFolderAsync(folderName, cancellationToken); }
+        await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
+        var summaries = await folder.FetchAsync(0, -1, MessageSummaryItems.UniqueId | MessageSummaryItems.InternalDate, cancellationToken);
+        var expired = summaries.Where(x => x.InternalDate is { } date && date < cutoffUtc).Select(x => x.UniqueId).ToArray();
+        if (expired.Length == 0) return 0;
+        await folder.AddFlagsAsync(expired, MessageFlags.Deleted, true, cancellationToken);
+        await folder.ExpungeAsync(expired, cancellationToken);
+        return expired.Length;
+    }
     public Task DisconnectAsync(CancellationToken cancellationToken) => _client.IsConnected ? _client.DisconnectAsync(true, cancellationToken) : Task.CompletedTask;
     public async Task<ImapFolderSnapshot> GetFolderSnapshotAsync(string folderName, CancellationToken cancellationToken)
     {
@@ -181,6 +216,16 @@ internal sealed class MailKitImapClientSession : IImapClientSession
     public ValueTask DisposeAsync() { _client.Dispose(); return ValueTask.CompletedTask; }
     private async Task<IMailFolder> OpenFolderAsync(string name, FolderAccess access, uint? expectedUidValidity, CancellationToken token)
     { var folder = await _client.GetFolderAsync(name, token); await folder.OpenAsync(access, token); if (expectedUidValidity is > 0 && folder.UidValidity != expectedUidValidity) throw new ImapConnectionService.UidValidityChangedException(); return folder; }
+    private async Task<IMailFolder> GetOrCreateFolderAsync(string name, CancellationToken token)
+    {
+        try { return await _client.GetFolderAsync(name, token); }
+        catch (FolderNotFoundException)
+        {
+            var ns = _client.PersonalNamespaces.FirstOrDefault() ?? throw new FolderNotFoundException(name);
+            return await _client.GetFolder(ns).CreateAsync(name, true, token)
+                ?? throw new FolderNotFoundException(name);
+        }
+    }
     private static string? Header(IMessageSummary summary, string name) => summary.Headers?[name];
     private static DateTimeOffset? ParseDate(string? value) => DateTimeOffset.TryParse(value, out var date) ? date : null;
 }

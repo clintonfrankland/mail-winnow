@@ -69,10 +69,10 @@ public sealed class InboxDeletionQueue(IServiceScopeFactory scopes, ILogger<Inbo
         var connection = new ImapConnectionSettings(options.Host, options.Port, options.UseSsl, destination.Username,
             credentials.Unprotect(destination.ProtectedCredential, CredentialKind.DestinationImapPassword));
         var result = await scope.ServiceProvider.GetRequiredService<IImapConnectionService>()
-            .DeleteAndExpungeAsync(connection, deletion.Folder, [deletion.Uid], deletion.UidValidity, cancellationToken);
+            .MoveToFolderAsync(connection, deletion.Folder, [deletion.Uid], deletion.UidValidity, "Trash", cancellationToken);
         if (!result.Succeeded)
         {
-            logger.LogWarning("Inbox deletion could not complete for destination mailbox {MailboxId} and UID {Uid}: {Error}",
+            logger.LogWarning("Inbox move to Trash could not complete for destination mailbox {MailboxId} and UID {Uid}: {Error}",
                 deletion.DestinationMailboxId, deletion.Uid, result.Error);
             return false;
         }

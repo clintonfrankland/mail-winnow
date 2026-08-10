@@ -83,8 +83,8 @@ public sealed class MessageDeliveryService(
         var local = localImap.Value;
         var connection = new ImapConnectionSettings(local.Host, local.Port, local.UseSsl, destination.Username,
             credentials.Unprotect(destination.ProtectedCredential, CredentialKind.DestinationImapPassword));
-        var deleted = await imap.DeleteAndExpungeAsync(connection, delivery.DestinationFolder, [delivery.DestinationUid.Value], delivery.DestinationUidValidity.Value, cancellationToken);
-        if (!deleted.Succeeded) { await CleanupFailedAsync(delivery, deleted.Error ?? "The destination message could not be deleted.", cancellationToken); return; }
+        var deleted = await imap.MoveToFolderAsync(connection, delivery.DestinationFolder, [delivery.DestinationUid.Value], delivery.DestinationUidValidity.Value, "Trash", cancellationToken);
+        if (!deleted.Succeeded) { await CleanupFailedAsync(delivery, deleted.Error ?? "The destination message could not be moved to Trash.", cancellationToken); return; }
         delivery.State = MessageDeliveryState.Deleted;
         delivery.DeletedUtc = DateTimeOffset.UtcNow;
         delivery.LastFailureStage = null;
@@ -288,7 +288,7 @@ public sealed class MessageDeliveryService(
     {
         delivery.State = MessageDeliveryState.Expired;
         delivery.LastFailureStage = "Cleanup";
-        delivery.SanitizedError = message.Length <= 512 ? message : "The destination message could not be deleted.";
+        delivery.SanitizedError = message.Length <= 512 ? message : "The destination message could not be moved to Trash.";
         await db.SaveChangesAsync(token);
     }
 
