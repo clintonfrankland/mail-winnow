@@ -9,6 +9,12 @@
     width: 44px;
 }
 
+.brand-mark-plain {
+    background: transparent !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
 .brand small {
     color: #e3bfc4;
 }
