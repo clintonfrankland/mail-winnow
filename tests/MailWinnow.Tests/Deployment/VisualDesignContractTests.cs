@@ -18,10 +18,13 @@ public sealed class VisualDesignContractTests
         Assert.Contains("Mail worth keeping", navigation);
         Assert.Contains("mail-winnow-mark.png", navigation);
         Assert.Contains("rel=\"icon\"", application);
-        Assert.Contains("mail-winnow-mark.jpg", application);
+        Assert.Contains("type=\"image/png\"", application);
+        Assert.Contains("mail-winnow-mark.png", application);
+        Assert.DoesNotContain("mail-winnow-mark.jpg", application);
         Assert.True(new FileInfo(productMark).Length > 0);
         Assert.DoesNotContain("clip-path: polygon", branding);
         Assert.Contains("object-fit: contain", branding);
+        Assert.DoesNotContain("object-fit: cover", branding);
         Assert.DoesNotContain(".brand-mark {\n    background: #fff", branding);
         Assert.DoesNotContain("MailWinnow.Web", navigation);
         Assert.Contains("@media(max-width:700px)", styles);

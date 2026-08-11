@@ -20,7 +20,7 @@
     display: block;
     height: 68px;
     margin-bottom: 1.25rem;
-    object-fit: cover;
+    object-fit: contain;
     width: 68px;
 }
 
