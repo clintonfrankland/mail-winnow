@@ -7,12 +7,18 @@ public sealed class VisualDesignContractTests
     {
         var layout = Read("src", "MailWinnow.Web", "Components", "Layout", "MainLayout.razor");
         var navigation = Read("src", "MailWinnow.Web", "Components", "Layout", "NavMenu.razor");
+        var application = Read("src", "MailWinnow.Web", "Components", "App.razor");
         var styles = Read("src", "MailWinnow.Web", "wwwroot", "app.css");
         var accessibility = Read("src", "MailWinnow.Web", "wwwroot", "accessibility.css");
+        var productMark = FindRoot("src", "MailWinnow.Web", "wwwroot", "mail-winnow-mark.jpg");
 
         Assert.Contains("Private household mail", layout);
         Assert.Contains("Mail Winnow", navigation);
-        Assert.Contains("Selective delivery", navigation);
+        Assert.Contains("Mail worth keeping", navigation);
+        Assert.Contains("mail-winnow-mark.jpg", navigation);
+        Assert.Contains("rel=\"icon\"", application);
+        Assert.Contains("mail-winnow-mark.jpg", application);
+        Assert.True(new FileInfo(productMark).Length > 0);
         Assert.DoesNotContain("MailWinnow.Web", navigation);
         Assert.Contains("@media(max-width:700px)", styles);
         Assert.Contains("prefers-reduced-motion", accessibility);

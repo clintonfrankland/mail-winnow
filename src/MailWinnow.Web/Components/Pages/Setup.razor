@@ -2,7 +2,7 @@
 @attribute [AllowAnonymous]
 @inject IFirstRunSetupService SetupService
 <PageTitle>First-run setup</PageTitle>
-<div class="auth-wrap"><section class="card auth-card"><div class="auth-mark">MW</div><div class="eyebrow">Secure setup</div><h1>Set up Mail Winnow</h1>
+<div class="auth-wrap"><section class="card auth-card"><img class="auth-mark" src="mail-winnow-mark.jpg" alt="Mail Winnow" /><div class="eyebrow">Secure setup</div><h1>Set up Mail Winnow</h1>
 @if (_setupRequired){<p class="text-body-secondary">Create the first household account. This account will manage the installation.</p>@if (!string.IsNullOrWhiteSpace(Error)){<div class="alert alert-danger" role="alert">@Error</div>}<form method="post" action="/auth/setup" class="form-stack"><AntiforgeryToken /><label>Email address<input class="form-control" name="Email" type="email" autocomplete="username" required /></label><label>Password<input class="form-control" name="Password" type="password" minlength="12" autocomplete="new-password" required /><span class="small text-body-secondary">Use at least 12 characters.</span></label><button class="btn btn-primary" type="submit">Create administrator</button></form>}
 else{<div class="alert alert-success">Setup is complete and public registration is closed.</div><a class="btn btn-primary" href="login">Continue to sign in</a>}</section></div>
 @code { [SupplyParameterFromQuery] public string? Error { get; set; } private bool _setupRequired; protected override async Task OnInitializedAsync()=>_setupRequired=await SetupService.IsSetupRequiredAsync(); }

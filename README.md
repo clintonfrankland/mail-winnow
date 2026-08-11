@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.0.0.1**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.0.0.2**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -39,7 +39,7 @@ Mailbox forms follow the same property-binding rule. New source-account submissi
 
 The Mailboxes page presents any number of source accounts as a compact list with a single **Add source** action. Each household user has one destination mailbox, shown separately as a non-secret summary of username, configured host, port, transport security, folder, enabled state, and whether a credential is stored. Never render, return, or prefill the protected destination credential; password fields are blank and accept only a replacement value.
 
-The Web UI uses one shared visual system across authenticated, authentication, administration, mailbox, review, error, and empty states. New pages must use the common application shell, page headings, cards, forms, status badges, and responsive breakpoints rather than browser-default controls or template content. Keep keyboard focus visible on interactive elements, respect reduced-motion preferences, and preserve readable mobile layouts. Run `scripts/check-ui-contract.sh` with the focused UI tests before deployment.
+The Web UI uses one shared visual system across authenticated, authentication, administration, mailbox, review, error, and empty states. The Mail Winnow envelope mark is the canonical product identity and appears in the application navigation, authentication flows, browser favicon, and mobile home-screen icon. New pages must use the common application shell, page headings, cards, forms, status badges, and responsive breakpoints rather than browser-default controls or template content. Keep keyboard focus visible on interactive elements, respect reduced-motion preferences, and preserve readable mobile layouts. Run `scripts/check-ui-contract.sh` with the focused UI tests before deployment.
 
 ## Application migrations
 

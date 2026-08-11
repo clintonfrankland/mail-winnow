@@ -1,0 +1,35 @@
+.sidebar {
+    background: #310000;
+}
+
+.brand-mark {
+    background: #fff;
+    border-radius: 11px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+    display: block;
+    height: 44px;
+    object-fit: cover;
+    width: 44px;
+}
+
+.brand small {
+    color: #e3bfc4;
+}
+
+.auth-mark {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(49, 0, 0, .14);
+    display: block;
+    height: 68px;
+    margin-bottom: 1.25rem;
+    object-fit: cover;
+    width: 68px;
+}
+
+@media (max-width: 760px) {
+    .brand-mark {
+        height: 38px;
+        width: 38px;
+    }
+}
