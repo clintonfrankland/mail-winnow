@@ -3,10 +3,9 @@
 }
 
 .brand-mark {
-    clip-path: polygon(50% 0, 83% 7%, 100% 28%, 100% 72%, 83% 93%, 50% 100%, 17% 93%, 0 72%, 0 28%, 17% 7%);
     display: block;
     height: 44px;
-    object-fit: cover;
+    object-fit: contain;
     width: 44px;
 }
 
