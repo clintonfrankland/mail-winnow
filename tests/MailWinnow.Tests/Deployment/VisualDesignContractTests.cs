@@ -10,6 +10,7 @@ public sealed class VisualDesignContractTests
         var application = Read("src", "MailWinnow.Web", "Components", "App.razor");
         var styles = Read("src", "MailWinnow.Web", "wwwroot", "app.css");
         var accessibility = Read("src", "MailWinnow.Web", "wwwroot", "accessibility.css");
+        var branding = Read("src", "MailWinnow.Web", "wwwroot", "brand.css");
         var productMark = FindRoot("src", "MailWinnow.Web", "wwwroot", "mail-winnow-mark.jpg");
 
         Assert.Contains("Private household mail", layout);
@@ -19,6 +20,8 @@ public sealed class VisualDesignContractTests
         Assert.Contains("rel=\"icon\"", application);
         Assert.Contains("mail-winnow-mark.jpg", application);
         Assert.True(new FileInfo(productMark).Length > 0);
+        Assert.Contains("clip-path: polygon", branding);
+        Assert.DoesNotContain(".brand-mark {\n    background: #fff", branding);
         Assert.DoesNotContain("MailWinnow.Web", navigation);
         Assert.Contains("@media(max-width:700px)", styles);
         Assert.Contains("prefers-reduced-motion", accessibility);
