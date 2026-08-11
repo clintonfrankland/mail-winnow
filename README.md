@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.0.0.2**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.3.0.91**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
