@@ -212,6 +212,12 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("height:100%;min-height:0", inboxStyles);
         Assert.Contains("class=\"message-row-content\"", File.ReadAllText(FindPage("Inbox.razor")));
         Assert.Contains(".message-row-content strong,.message-row-content span,.message-row-content time", inboxStyles);
+        Assert.Contains("class=\"message-row-topline\"", File.ReadAllText(FindPage("Inbox.razor")));
+        Assert.Contains("class=\"message-sender\"", File.ReadAllText(FindPage("Inbox.razor")));
+        Assert.Contains("class=\"retention-badge\" aria-label=\"Retention:", File.ReadAllText(FindPage("Inbox.razor")));
+        Assert.Contains(".message-row-topline{align-items:center;display:flex!important", inboxStyles);
+        Assert.Contains(".message-sender{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis", inboxStyles);
+        Assert.Contains(".retention-badge{background:var(--primary-soft);border-radius:999px;color:var(--primary);flex:0 0 auto", inboxStyles);
         Assert.Contains("@media(max-width:520px)", inboxStyles);
         Assert.Contains("mobile.css", app);
         Assert.Contains("@media(max-width:700px)", mobileStyles);

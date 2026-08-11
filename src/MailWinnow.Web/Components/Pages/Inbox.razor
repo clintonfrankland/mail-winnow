@@ -19,7 +19,10 @@
         {
             <button type="button" class="message-row @(_selected?.Uid == message.Uid ? "selected" : null)" @onclick="() => SelectAsync(message)">
                 <span class="message-row-content">
-                    <strong>@message.From</strong>
+                    <span class="message-row-topline">
+                        <strong class="message-sender">@message.From</strong>
+                        @if (message.RetentionLabel is not null) { <span class="retention-badge" aria-label="Retention: @message.RetentionLabel">@message.RetentionLabel</span> }
+                    </span>
                     <span>@message.Subject</span>
                     <time>@message.Date.LocalDateTime.ToString("g")</time>
                 </span>

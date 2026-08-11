@@ -16,7 +16,15 @@ public sealed class InboxReaderTests
     {
         await using var connection = new SqliteConnection("Data Source=:memory:"); await connection.OpenAsync();
         await using var db = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(connection).Options); await db.Database.EnsureCreatedAsync();
-        db.DestinationMailboxes.Add(new DestinationMailbox { OwnerUserId = "owner", Username = "local", ProtectedCredential = "password", Folder = "INBOX" });
+        var destination = new DestinationMailbox { OwnerUserId = "owner", Username = "local", ProtectedCredential = "password", Folder = "INBOX" };
+        db.DestinationMailboxes.Add(destination);
+        var delivered = DateTimeOffset.UtcNow.AddDays(-1);
+        db.MessageDeliveries.Add(new MessageDelivery
+        {
+            OwnerUserId = "owner", SourceMessageHeaderId = Guid.NewGuid(), DestinationMailboxId = destination.Id,
+            DestinationFolder = "INBOX", DestinationUid = 2, DestinationUidValidity = 42,
+            State = MessageDeliveryState.Delivered, DeliveredUtc = delivered, ExpiresUtc = delivered.AddDays(7)
+        });
         await db.SaveChangesAsync();
         var imap = new FakeImap();
         var service = new InboxReaderService(db, new OwnershipAuthorizer(), new Protector(), Options.Create(new LocalImapOptions { Host = "imap.test", Port = 993, UseSsl = true }), imap);
@@ -29,6 +37,8 @@ public sealed class InboxReaderTests
         Assert.Equal([2u, 1u], listed.Select(x => x.Uid));
         Assert.All(listed, item => Assert.NotEqual(default, item.Date));
         Assert.Equal(imap.NewestInternalDate, listed[0].Date);
+        Assert.Equal("1 week", listed[0].RetentionLabel);
+        Assert.Null(listed[1].RetentionLabel);
         Assert.True(message.Succeeded);
         Assert.True(message.Value!.HasRemoteImages);
         Assert.Contains("<strong>world</strong>", message.Value.HtmlBody);
@@ -42,6 +52,28 @@ public sealed class InboxReaderTests
         Assert.Contains("default-src 'none'", message.Value.HtmlBody);
         Assert.Equal((2u, 42u), imap.FetchedIdentity);
         Assert.Equal("local", imap.Connection!.Username);
+    }
+
+    [Theory]
+    [InlineData(null, "Forever")]
+    [InlineData(30, "1 month")]
+    [InlineData(7, "1 week")]
+    [InlineData(3, "3 days")]
+    [InlineData(1, "1 day")]
+    public void MapsTrackedDeliveryExpiryToProductRetentionLabel(int? days, string expected)
+    {
+        var delivered = DateTimeOffset.Parse("2026-08-11T00:00:00Z");
+
+        Assert.Equal(expected, InboxReaderService.RetentionLabel(delivered, days is null ? null : delivered.AddDays(days.Value)));
+    }
+
+    [Fact]
+    public void OmitsLabelWhenTrackedExpiryCannotBeMapped()
+    {
+        var delivered = DateTimeOffset.Parse("2026-08-11T00:00:00Z");
+
+        Assert.Null(InboxReaderService.RetentionLabel(delivered, delivered.AddDays(2)));
+        Assert.Null(InboxReaderService.RetentionLabel(null, delivered.AddDays(1)));
     }
 
     [Fact]

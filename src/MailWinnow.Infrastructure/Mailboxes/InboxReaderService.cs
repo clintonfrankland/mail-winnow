@@ -9,7 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace MailWinnow.Infrastructure.Mailboxes;
 
-public sealed record InboxMessageSummary(uint Uid, uint UidValidity, string From, string Subject, DateTimeOffset Date);
+public sealed record InboxMessageSummary(uint Uid, uint UidValidity, string From, string Subject, DateTimeOffset Date,
+    string? RetentionLabel = null);
 public sealed record InboxMessageContent(uint Uid, string From, string To, string Subject, DateTimeOffset Date,
     string HtmlBody, string HtmlBodyWithRemoteImages, bool HasRemoteImages);
 public sealed record InboxLoadResult<T>(bool Succeeded, T? Value, string? Error = null);
@@ -48,9 +49,33 @@ public sealed partial class InboxReaderService(
         var uids = snapshot.Value.Uids.OrderByDescending(x => x).Take(200).ToArray();
         var headers = await imap.FetchHeadersAsync(connection, destination.Folder, uids, snapshot.Value.UidValidity, cancellationToken);
         if (!headers.Succeeded || headers.Value is null) return new(false, null, headers.Error ?? "Unable to read message headers.");
+        var trackedDeliveries = await db.MessageDeliveries.AsNoTracking()
+            .Where(x => x.OwnerUserId == destination.OwnerUserId && x.DestinationMailboxId == destination.Id &&
+                x.DestinationFolder == destination.Folder && x.DestinationUidValidity == snapshot.Value.UidValidity &&
+                x.DestinationUid != null && uids.Contains(x.DestinationUid.Value) && x.State == MessageDeliveryState.Delivered)
+            .Select(x => new { Uid = x.DestinationUid!.Value, x.DeliveredUtc, x.ExpiresUtc })
+            .ToArrayAsync(cancellationToken);
+        var retentionByUid = trackedDeliveries.GroupBy(x => x.Uid)
+            .Where(x => x.Count() == 1)
+            .ToDictionary(x => x.Key, x => RetentionLabel(x.Single().DeliveredUtc, x.Single().ExpiresUtc));
         return new(true, headers.Value.Select(x => new InboxMessageSummary(x.Uid, snapshot.Value.UidValidity,
-                x.From ?? "(unknown sender)", x.Subject ?? "(no subject)", ResolveDate(x)))
+                x.From ?? "(unknown sender)", x.Subject ?? "(no subject)", ResolveDate(x), retentionByUid.GetValueOrDefault(x.Uid)))
             .OrderByDescending(x => x.Date).ThenByDescending(x => x.Uid).ToArray());
+    }
+
+    public static string? RetentionLabel(DateTimeOffset? deliveredUtc, DateTimeOffset? expiresUtc)
+    {
+        if (expiresUtc is null) return "Forever";
+        if (deliveredUtc is null) return null;
+        var days = (expiresUtc.Value - deliveredUtc.Value).TotalDays;
+        return days switch
+        {
+            >= 29.999 and <= 30.001 => "1 month",
+            >= 6.999 and <= 7.001 => "1 week",
+            >= 2.999 and <= 3.001 => "3 days",
+            >= .999 and <= 1.001 => "1 day",
+            _ => null
+        };
     }
 
     public async Task<InboxLoadResult<InboxMessageContent>> ReadAsync(ClaimsPrincipal user, uint uid, uint uidValidity, CancellationToken cancellationToken = default)
