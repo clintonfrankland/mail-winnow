@@ -177,7 +177,8 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("@onclick=\"ShowImages\"", source);
         Assert.Contains("<iframe class=\"message-body\"", source);
         Assert.Contains("@key=\"ViewerKey\"", source);
-        Assert.Contains("sandbox=\"\"", source);
+        Assert.Contains("sandbox=\"allow-popups allow-popups-to-escape-sandbox\"", source);
+        Assert.Contains("referrerpolicy=\"no-referrer\"", source);
         Assert.Contains("srcdoc=", source);
         Assert.DoesNotContain("<pre class=\"message-body\"", source);
         Assert.Contains("<span>Delete</span>", source);

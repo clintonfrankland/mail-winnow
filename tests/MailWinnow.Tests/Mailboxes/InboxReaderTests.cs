@@ -49,6 +49,14 @@ public sealed class InboxReaderTests
         Assert.DoesNotContain("<script", message.Value.HtmlBodyWithRemoteImages, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("bad()", message.Value.HtmlBodyWithRemoteImages);
         Assert.DoesNotContain("onclick", message.Value.HtmlBodyWithRemoteImages, StringComparison.OrdinalIgnoreCase);
+        Assert.All([message.Value.HtmlBody, message.Value.HtmlBodyWithRemoteImages], document =>
+        {
+            Assert.Contains("href=\"https://example.test/read\"", document);
+            Assert.Contains("target=\"_blank\"", document);
+            Assert.Contains("rel=\"noopener noreferrer\"", document);
+            Assert.DoesNotContain("javascript:", document, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("<a>Unsafe</a>", document);
+        });
         Assert.Contains("default-src 'none'", message.Value.HtmlBody);
         Assert.Equal((2u, 42u), imap.FetchedIdentity);
         Assert.Equal("local", imap.Connection!.Username);
@@ -106,7 +114,7 @@ public sealed class InboxReaderTests
                 new(2, null, null, "New <new@test>", null, null, null, null, "New", null, NewestInternalDate)];
             return Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success(headers.Where(x => u.Contains(x.Uid)).ToArray()));
         }
-        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) { FetchedIdentity = (u, v ?? 0); var related = new Multipart("related") { new TextPart("html") { Text = "<p onclick=\"steal()\">Hello <strong>world</strong></p><img src=\"https://images.test/pixel.png\"><img src=\"cid:logo@test\"><script>bad()</script>" }, new MimePart("image", "png") { ContentId = "logo@test", Content = new MimeContent(new MemoryStream([1, 2, 3])) } }; var m = new MimeMessage { Subject = "New", Body = related }; m.From.Add(MailboxAddress.Parse("New <new@test>")); m.To.Add(MailboxAddress.Parse("Owner <owner@test>")); return Task.FromResult(ImapOperationResult<MimeMessage>.Success(m)); }
+        public Task<ImapOperationResult<MimeMessage>> FetchMessageAsync(ImapConnectionSettings c, string f, uint u, uint? v = null, CancellationToken t = default) { FetchedIdentity = (u, v ?? 0); var related = new Multipart("related") { new TextPart("html") { Text = "<p onclick=\"steal()\">Hello <strong>world</strong></p><a href=\"https://example.test/read\" target=\"_self\" rel=\"opener\">Read more</a><a href=\"javascript:steal()\">Unsafe</a><img src=\"https://images.test/pixel.png\"><img src=\"cid:logo@test\"><script>bad()</script>" }, new MimePart("image", "png") { ContentId = "logo@test", Content = new MimeContent(new MemoryStream([1, 2, 3])) } }; var m = new MimeMessage { Subject = "New", Body = related }; m.From.Add(MailboxAddress.Parse("New <new@test>")); m.To.Add(MailboxAddress.Parse("Owner <owner@test>")); return Task.FromResult(ImapOperationResult<MimeMessage>.Success(m)); }
         public Task<ImapOperationResult<IReadOnlyList<string>>> ListFoldersAsync(ImapConnectionSettings c, CancellationToken t = default) => throw new NotSupportedException();
         public Task<ImapOperationResult<uint?>> AppendMessageAsync(ImapConnectionSettings c, string f, MimeMessage m, CancellationToken t = default, DateTimeOffset? d = null) => throw new NotSupportedException();
         public Task<ImapOperationResult<int>> DeleteAndExpungeAsync(ImapConnectionSettings c, string f, IReadOnlyList<uint> u, uint v, CancellationToken t = default) => throw new NotSupportedException();

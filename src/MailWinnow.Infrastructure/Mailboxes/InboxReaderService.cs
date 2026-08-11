@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
+using AngleSharp.Dom;
 using Ganss.Xss;
 using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Security;
@@ -122,6 +123,12 @@ public sealed partial class InboxReaderService(
         sanitizer.AllowedSchemes.Add("data");
         sanitizer.AllowedAttributes.Add("class");
         sanitizer.AllowedAttributes.Add("id");
+        sanitizer.PostProcessNode += (_, args) =>
+        {
+            if (args.Node is not IElement { LocalName: "a" } link || !link.HasAttribute("href")) return;
+            link.SetAttribute("target", "_blank");
+            link.SetAttribute("rel", "noopener noreferrer");
+        };
         return sanitizer.Sanitize(html);
     }
 
