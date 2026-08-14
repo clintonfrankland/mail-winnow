@@ -13,6 +13,7 @@ public sealed class VisualDesignContractTests
         var branding = Read("src", "MailWinnow.Web", "wwwroot", "brand.css");
         var productMark = FindRoot("src", "MailWinnow.Web", "wwwroot", "mail-winnow-mark-bordered.png");
         var favicon = FindRoot("src", "MailWinnow.Web", "wwwroot", "favicon.png");
+        var legacyFavicon = FindRoot("src", "MailWinnow.Web", "wwwroot", "favicon.ico");
 
         Assert.Contains("Private household mail", layout);
         Assert.Contains("Mail Winnow", navigation);
@@ -22,12 +23,13 @@ public sealed class VisualDesignContractTests
         Assert.Contains("rel=\"icon\"", application);
         Assert.Contains("rel=\"shortcut icon\"", application);
         Assert.Contains("type=\"image/png\"", application);
-        Assert.Contains("rel=\"icon\" type=\"image/png\" href=\"mail-winnow-mark-bordered.png\"", application);
-        Assert.Contains("rel=\"shortcut icon\" type=\"image/png\" href=\"favicon.png?v=3\"", application);
-        Assert.Contains("rel=\"apple-touch-icon\" href=\"mail-winnow-mark-bordered.png\"", application);
+        Assert.Contains("rel=\"icon\" type=\"image/png\" href=\"/favicon.ico?v=4\"", application);
+        Assert.Contains("rel=\"shortcut icon\" type=\"image/png\" href=\"/favicon.ico?v=4\"", application);
+        Assert.Contains("rel=\"apple-touch-icon\" href=\"/mail-winnow-mark-bordered.png?v=4\"", application);
         Assert.DoesNotContain("mail-winnow-mark.jpg", application);
         Assert.True(new FileInfo(productMark).Length > 0);
         Assert.True(new FileInfo(favicon).Length > 0);
+        Assert.Equal(File.ReadAllBytes(productMark), File.ReadAllBytes(legacyFavicon));
         Assert.DoesNotContain("clip-path: polygon", branding);
         Assert.Contains("object-fit: contain", branding);
         Assert.DoesNotContain("object-fit: cover", branding);
