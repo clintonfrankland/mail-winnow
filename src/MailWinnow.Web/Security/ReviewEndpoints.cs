@@ -42,13 +42,14 @@ public static class ReviewEndpoints
             Snapshot previewed;
             try { previewed = JsonSerializer.Deserialize<Snapshot>(protector.Unprotect(request.PreviewToken))!; }
             catch { throw new InvalidOperationException("The rule preview is stale or invalid. Preview it again."); }
-            if (previewed is null || previewed.OwnerUserId != owner || !previewed.SameConfiguration(snapshot))
+            if (previewed is null || previewed.ProposalRuleId == Guid.Empty || previewed.OwnerUserId != owner || !previewed.SameConfiguration(snapshot))
                 throw new InvalidOperationException("The rule inputs changed after preview. Preview them again.");
             if (request.ReplaceRuleId is { } replaceRuleId)
             {
                 await rules.ReplaceAsync(owner, replaceRuleId, rule, ct);
                 return Redirect(context, "Rule updated and matching stored messages refreshed.");
             }
+            rule.Id = previewed.ProposalRuleId;
             await rules.AddOrUpdateAsync(rule, ct);
             return Redirect(context, "Rule created and matching stored messages refreshed.");
         }
@@ -118,12 +119,12 @@ public static class ReviewEndpoints
         public bool Confirm { get; set; }
         public string? PreviewToken { get; set; }
     }
-    public sealed record Snapshot(string OwnerUserId, RuleAction Action, RuleScope Scope, RuleMatchType MatchType, string MatchValue,
+    public sealed record Snapshot(Guid ProposalRuleId, string OwnerUserId, RuleAction Action, RuleScope Scope, RuleMatchType MatchType, string MatchValue,
         Guid? SourceMailboxId, DateTimeOffset? EffectiveUtc, DateTimeOffset? ExpiresUtc, int? RetentionDays, Guid? ReplaceRuleId, RuleImpactPreview? Impact = null)
     {
-        public static Snapshot From(RuleRequest request, MailRule rule, string owner) => new(owner, rule.Action, rule.Scope, rule.MatchType,
+        public static Snapshot From(RuleRequest request, MailRule rule, string owner) => new(rule.Id, owner, rule.Action, rule.Scope, rule.MatchType,
             rule.MatchValue, rule.SourceMailboxId, rule.EffectiveUtc, rule.ExpiresUtc, rule.DeliveredMessageRetentionDays, request.ReplaceRuleId);
-        public bool SameConfiguration(Snapshot other) => this with { Impact = null } == other with { Impact = null };
+        public bool SameConfiguration(Snapshot other) => (this with { ProposalRuleId = Guid.Empty, Impact = null }) == (other with { ProposalRuleId = Guid.Empty, Impact = null });
     }
     public sealed record RuleIdRequest(Guid Id);
     public sealed record HeaderRequest(Guid Id);

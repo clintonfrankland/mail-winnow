@@ -6,6 +6,10 @@ using MailWinnow.Infrastructure.Security;
 using MailWinnow.Web.Security;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using MailWinnow.Infrastructure.Persistence;
+using MailWinnow.Infrastructure.Mailboxes;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace MailWinnow.Tests.Rules;
 
@@ -35,6 +39,39 @@ public sealed class RulePreviewEndpointWorkflowTests
         Assert.Equal(0, rules.ReplaceCount);
         Assert.Equal(1, rules.WriteCount);
         Assert.Contains("saved=Rule%20created", RedirectUrl(confirmationResult));
+    }
+
+    [Fact]
+    public async Task Create_RealWorkflowIsReadOnlyUntilConfirmationAndReplaySafe()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new MailWinnowDbContext(new DbContextOptionsBuilder<MailWinnowDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var mailbox = new SourceMailbox { OwnerUserId = Owner, DisplayName = "Source", Host = "imap.test", Port = 993, UseSsl = true, Username = "owner", ProtectedCredential = "protected", SelectedFoldersJson = "[]" };
+        var header = new SourceMessageHeader { SourceMailboxId = mailbox.Id, FolderName = "INBOX", UidValidity = 1, Uid = 1, From = "sender@example.test", Subject = "Subject", EvaluationOutcome = RuleOutcome.Pending };
+        db.AddRange(mailbox, header);
+        await db.SaveChangesAsync();
+        var deliveries = new RecordingDeliveryService();
+        var evaluator = new RuleEvaluationService(db, deliveries);
+        var rules = new RuleManagementService(db, evaluator);
+        var protection = new EphemeralDataProtectionProvider();
+        var request = Request();
+
+        var token = TokenFrom(await ReviewEndpoints.AddRuleAsync(Context(), request, rules, new RuleImpactPreviewService(db), new OwnershipAuthorizer(), protection, default));
+
+        Assert.Empty(await db.MailRules.ToListAsync());
+        Assert.Equal(RuleOutcome.Pending, header.EvaluationOutcome);
+        Assert.Equal(0, deliveries.QueueCount);
+
+        request.Confirm = true;
+        request.PreviewToken = token;
+        await ReviewEndpoints.AddRuleAsync(Context(), request, rules, new RuleImpactPreviewService(db), new OwnershipAuthorizer(), protection, default);
+        await ReviewEndpoints.AddRuleAsync(Context(), request, rules, new RuleImpactPreviewService(db), new OwnershipAuthorizer(), protection, default);
+
+        Assert.Single(await db.MailRules.ToListAsync());
+        Assert.Equal(RuleOutcome.Allow, header.EvaluationOutcome);
+        Assert.Equal(1, deliveries.QueueCount);
     }
 
     [Fact]
@@ -147,5 +184,16 @@ public sealed class RulePreviewEndpointWorkflowTests
         public Task DeleteAsync(string ownerUserId, Guid ruleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task SetMessageDecisionAsync(MessageDecision decision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeleteMessageDecisionAsync(string ownerUserId, Guid headerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingDeliveryService : IMessageDeliveryService
+    {
+        public int QueueCount { get; private set; }
+        public Task QueueApprovedAsync(string ownerUserId, Guid sourceMessageHeaderId, Guid? approvalRuleId, CancellationToken cancellationToken = default) { QueueCount++; return Task.CompletedTask; }
+        public Task DeliverAsync(Guid deliveryId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<Guid>> GetDueDeliveryIdsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<Guid>> GetDueCleanupIdsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task CleanupExpiredAsync(Guid deliveryId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MailboxOperationResult> RetryAsync(ClaimsPrincipal principal, Guid deliveryId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }
