@@ -22,7 +22,7 @@ public static class ReviewEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> AddRuleAsync(HttpContext context, [FromForm] RuleRequest request, IRuleManagementService rules, IRuleImpactPreviewService previews, IOwnershipAuthorizer ownership, IDataProtectionProvider protection, CancellationToken ct)
+    internal static async Task<IResult> AddRuleAsync(HttpContext context, [FromForm] RuleRequest request, IRuleManagementService rules, IRuleImpactPreviewService previews, IOwnershipAuthorizer ownership, IDataProtectionProvider protection, CancellationToken ct)
     {
         try
         {

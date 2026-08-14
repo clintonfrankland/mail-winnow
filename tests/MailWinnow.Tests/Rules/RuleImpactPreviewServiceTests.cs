@@ -4,6 +4,7 @@ using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Rules;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace MailWinnow.Tests.Rules;
 
@@ -54,6 +55,30 @@ public sealed class RuleImpactPreviewServiceTests
 
         Assert.Equal(1, (await service.PreviewAsync("owner", proposal, null, f.Now)).AllowCount);
         Assert.Equal(0, (await service.PreviewAsync("owner", proposal, null, f.Now.AddMinutes(6))).AffectedCount);
+    }
+
+    [Fact]
+    public async Task Preview_BlockZeroMatchesAndHeaderOnlyFallbacksAreDeterministic()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.AddHeaderAsync("owner", null, "match this", f.Now.AddMinutes(2));
+        await f.AddHeaderAsync("owner", "sender@example.test", null, f.Now.AddMinutes(1));
+        var service = new RuleImpactPreviewService(f.Db);
+
+        var block = await service.PreviewAsync("owner", Rule("owner", RuleAction.PermanentlyBlock), null, f.Now);
+        var unknownSenderRule = Rule("owner", RuleAction.PermanentlyBlock);
+        unknownSenderRule.MatchType = RuleMatchType.SubjectContains;
+        unknownSenderRule.MatchValue = "match";
+        var unknownSender = await service.PreviewAsync("owner", unknownSenderRule, null, f.Now);
+        var zeroRule = Rule("owner", RuleAction.PermanentlyBlock);
+        zeroRule.MatchValue = "nobody@example.test";
+        var zero = await service.PreviewAsync("owner", zeroRule, null, f.Now);
+
+        Assert.Equal(0, zero.AffectedCount);
+        Assert.Equal(1, block.BlockCount);
+        Assert.Equal("(no subject)", block.Samples.Single().Subject);
+        Assert.Equal("(unknown sender)", unknownSender.Samples.Single().Sender);
+        Assert.DoesNotContain("Body", JsonSerializer.Serialize(block));
     }
 
     private static MailRule Rule(string owner, RuleAction action) => new() { OwnerUserId = owner, Action = action, Scope = RuleScope.User, MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test" };
