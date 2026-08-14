@@ -22,8 +22,8 @@ public sealed class VisualDesignContractTests
         Assert.Contains("rel=\"icon\"", application);
         Assert.Contains("rel=\"shortcut icon\"", application);
         Assert.Contains("type=\"image/png\"", application);
-        Assert.Contains("sizes=\"32x32\"", application);
-        Assert.Contains("href=\"favicon.png?v=2\"", application);
+        Assert.Contains("rel=\"icon\" type=\"image/png\" href=\"mail-winnow-mark-bordered.png\"", application);
+        Assert.Contains("rel=\"shortcut icon\" type=\"image/png\" href=\"favicon.png?v=3\"", application);
         Assert.Contains("rel=\"apple-touch-icon\" href=\"mail-winnow-mark-bordered.png\"", application);
         Assert.DoesNotContain("mail-winnow-mark.jpg", application);
         Assert.True(new FileInfo(productMark).Length > 0);
