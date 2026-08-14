@@ -149,7 +149,10 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("<option value=\"SenderDomain\">Sender domain</option>", source);
         Assert.Contains("<option value=\"PermanentlyBlock\">Always block</option>", source);
         Assert.Contains("Edit rule", source);
-        Assert.Contains("Save changes", source);
+        Assert.Contains("Preview impact", source);
+        Assert.Contains("Preview changes", source);
+        Assert.Contains("Confirm and save rule", source);
+        Assert.Contains("Rule impact preview", source);
         Assert.Contains("Remove rule", source);
         Assert.Contains("returnUrl=/rules", source);
         Assert.Contains("<option value=\"\" selected=\"@(selected is null)\">Forever</option>", source);

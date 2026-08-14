@@ -46,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISourceMailboxSyncLockProvider, SqlServerAccountLockProvider>();
         services.AddScoped<ISourceMailboxSynchronizer, SourceMailboxSynchronizer>();
         services.AddScoped<IRuleEvaluationService, RuleEvaluationService>();
+        services.AddScoped<IRuleImpactPreviewService, RuleImpactPreviewService>();
         services.AddScoped<IRuleManagementService, RuleManagementService>();
         services.AddScoped<IMessageReviewService, MessageReviewService>();
         services.AddSingleton<ReviewDecisionQueue>();
