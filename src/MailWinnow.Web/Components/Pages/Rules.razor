@@ -1,11 +1,28 @@
 @page "/rules"
 @attribute [Authorize]
 @inject IMessageReviewService ReviewService
+@inject IMailboxConfigurationService Mailboxes
+@inject Microsoft.AspNetCore.DataProtection.IDataProtectionProvider DataProtection
 
 <PageTitle>Rules</PageTitle>
 <header class="page-heading"><h1>Rules</h1></header>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="alert alert-danger" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Saved)) { <div class="alert alert-success" role="status">@Saved</div> }
+@if (_preview is not null)
+{
+    <section class="card section-card mb-3" aria-labelledby="impact-heading">
+        <h2 id="impact-heading">Rule impact preview</h2>
+        <p><strong>@_preview.Impact!.AffectedCount</strong> pending header@(_preview.Impact.AffectedCount == 1 ? "" : "s") would leave Pending: <strong>@_preview.Impact.AllowCount Allow</strong>, <strong>@_preview.Impact.BlockCount Block</strong>.</p>
+        @if (_preview.Impact.Samples.Count == 0) { <p class="text-body-secondary">No pending headers would be affected.</p> }
+        else { <ul>@foreach (var sample in _preview.Impact.Samples) { <li><strong>@sample.Sender</strong><br />@sample.Subject</li> }</ul> }
+        @if (_preview.Impact.OmittedCount > 0) { <p class="text-body-secondary">@_preview.Impact.OmittedCount additional affected header@(_preview.Impact.OmittedCount == 1 ? " is" : "s are") omitted.</p> }
+        <form method="post" action="/review/rule?returnUrl=/rules">
+            <AntiforgeryToken />@PreviewFields(_preview)
+            <input type="hidden" name="Confirm" value="true" /><input type="hidden" name="PreviewToken" value="@Preview" />
+            <button class="btn btn-primary" type="submit">Confirm and save rule</button> <a class="btn btn-outline-secondary" href="/rules">Edit inputs</a>
+        </form>
+    </section>
+}
 
 <details class="card section-card mb-3">
     <summary class="btn btn-primary">Create rule</summary>
@@ -16,8 +33,9 @@
         <label for="new-match-value">Value</label><input id="new-match-value" class="form-control" name="MatchValue" required />
         <label for="new-action">Action</label>
         <select id="new-action" class="form-select" name="Action"><option value="PermanentlyAllow">Always allow</option><option value="TemporarilyAllow">Allow for 7 days</option><option value="PermanentlyBlock">Always block</option></select>
+        @ScopeControls("new", RuleScope.User, null)
         <label for="new-retention">Destination retention</label>@RetentionSelect("new-retention", null)
-        <button class="btn btn-primary" type="submit">Create rule</button>
+        <button class="btn btn-primary" type="submit">Preview impact</button>
     </form>
 </details>
 
@@ -31,12 +49,13 @@
         <p class="small text-body-secondary">Destination retention: @RetentionLabel(rule.RetentionDays) · Created @rule.CreatedUtc.ToString("u")</p>
         <details><summary class="btn btn-sm btn-outline-secondary">Edit rule</summary>
             <form method="post" action="/review/rule?returnUrl=/rules" class="form-stack mt-3">
-                <AntiforgeryToken /><input type="hidden" name="ReplaceRuleId" value="@rule.Id" /><input type="hidden" name="Scope" value="@rule.Scope" />@if (rule.SourceMailboxId is { } sourceId) { <input type="hidden" name="SourceMailboxId" value="@sourceId" /> }
+                <AntiforgeryToken /><input type="hidden" name="ReplaceRuleId" value="@rule.Id" />
                 <label for="match-type-@rule.Id">Match</label><select id="match-type-@rule.Id" class="form-select" name="MatchType">@foreach (var type in Enum.GetValues<RuleMatchType>()) { <option value="@type" selected="@(rule.MatchType == type)">@MatchLabel(type)</option> }</select>
                 <label for="match-value-@rule.Id">Value</label><input id="match-value-@rule.Id" class="form-control" name="MatchValue" value="@rule.MatchValue" required />
                 <label for="action-@rule.Id">Action</label><select id="action-@rule.Id" class="form-select" name="Action"><option value="PermanentlyAllow" selected="@(rule.Action == RuleAction.PermanentlyAllow)">Always allow</option><option value="TemporarilyAllow" selected="@(rule.Action == RuleAction.TemporarilyAllow)">Allow for 7 days</option><option value="PermanentlyBlock" selected="@(rule.Action == RuleAction.PermanentlyBlock)">Always block</option></select>
+                @ScopeControls(rule.Id.ToString(), rule.Scope, rule.SourceMailboxId)
                 <label for="retention-@rule.Id">Destination retention</label>@RetentionSelect($"retention-{rule.Id}", rule.RetentionDays)
-                <button class="btn btn-primary" type="submit">Save changes</button>
+                <button class="btn btn-primary" type="submit">Preview changes</button>
             </form>
         </details>
         <form method="post" action="/review/rule/delete?returnUrl=/rules" class="mt-2"><AntiforgeryToken /><input type="hidden" name="Id" value="@rule.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">Remove rule</button></form>
@@ -48,10 +67,35 @@
     [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
     [SupplyParameterFromQuery] public string? Error { get; set; }
     [SupplyParameterFromQuery] public string? Saved { get; set; }
+    [SupplyParameterFromQuery] public string? Preview { get; set; }
     private IReadOnlyList<ReviewRule> _rules = [];
-    protected override async Task OnInitializedAsync() => _rules = await ReviewService.GetRulesAsync(HttpContext.User);
+    private IReadOnlyList<SourceMailboxSummary> _sources = [];
+    private ReviewEndpoints.Snapshot? _preview;
+    protected override async Task OnInitializedAsync()
+    {
+        _rules = await ReviewService.GetRulesAsync(HttpContext.User); _sources = await Mailboxes.ListSourcesAsync(HttpContext.User);
+        if (!string.IsNullOrWhiteSpace(Preview))
+        {
+            try
+            {
+                var json = DataProtection.CreateProtector("MailWinnow.RulePreview.v1").ToTimeLimitedDataProtector().Unprotect(Preview);
+                var value = System.Text.Json.JsonSerializer.Deserialize<ReviewEndpoints.Snapshot>(json);
+                var owner = HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (value is not null && value.OwnerUserId == owner && value.Impact is not null) _preview = value;
+            }
+            catch { Error = "The rule preview is stale or invalid. Preview it again."; }
+        }
+    }
     private static string ActionLabel(RuleAction action) => action switch { RuleAction.PermanentlyAllow => "Always allow", RuleAction.TemporarilyAllow => "Temporary allow", RuleAction.PermanentlyBlock => "Always block", _ => action.ToString() };
     private static string MatchLabel(RuleMatchType type) => type switch { RuleMatchType.ExactSender => "Exact sender address", RuleMatchType.SenderDomain => "Sender domain", RuleMatchType.NormalizedExactSubject => "Exact subject", RuleMatchType.SubjectContains => "Subject contains", _ => type.ToString() };
     private static string RetentionLabel(int? days) => days switch { null => "Forever", 30 => "1 month", 7 => "1 week", 3 => "3 days", 1 => "1 day", _ => $"{days} days" };
     private static RenderFragment RetentionSelect(string id, int? selected) => @<select id="@id" class="form-select" name="RetentionDays"><option value="" selected="@(selected is null)">Forever</option><option value="30" selected="@(selected == 30)">1 month</option><option value="7" selected="@(selected == 7)">1 week</option><option value="3" selected="@(selected == 3)">3 days</option><option value="1" selected="@(selected == 1)">1 day</option></select>;
+    private RenderFragment ScopeControls(string id, RuleScope selected, Guid? sourceId) => @<>
+        <label for="scope-@id">Scope</label><select id="scope-@id" class="form-select" name="Scope"><option value="User" selected="@(selected == RuleScope.User)">All my source mailboxes</option><option value="SourceAccount" selected="@(selected == RuleScope.SourceAccount)">One source mailbox</option></select>
+        <label for="source-@id">Source mailbox (required for one-mailbox scope)</label><select id="source-@id" class="form-select" name="SourceMailboxId"><option value="">Select a mailbox</option>@foreach (var source in _sources) { <option value="@source.Id" selected="@(source.Id == sourceId)">@source.DisplayName</option> }</select>
+    </>;
+    private static RenderFragment PreviewFields(ReviewEndpoints.Snapshot p) => @<>
+        <input type="hidden" name="Action" value="@p.Action" /><input type="hidden" name="Scope" value="@p.Scope" /><input type="hidden" name="MatchType" value="@p.MatchType" /><input type="hidden" name="MatchValue" value="@p.MatchValue" />
+        @if (p.SourceMailboxId is { } source) { <input type="hidden" name="SourceMailboxId" value="@source" /> } @if (p.EffectiveUtc is { } effective) { <input type="hidden" name="EffectiveUtc" value="@effective.ToString("O")" /> } @if (p.ExpiresUtc is { } expiry) { <input type="hidden" name="ExpiresUtc" value="@expiry.ToString("O")" /> } @if (p.RetentionDays is { } days) { <input type="hidden" name="RetentionDays" value="@days" /> } @if (p.ReplaceRuleId is { } replaced) { <input type="hidden" name="ReplaceRuleId" value="@replaced" /> }
+    </>;
 }

@@ -64,6 +64,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         if (rule.Scope == RuleScope.SourceAccount && !await db.SourceMailboxes.AnyAsync(x => x.Id == rule.SourceMailboxId && x.OwnerUserId == rule.OwnerUserId, cancellationToken))
             throw new InvalidOperationException("The source mailbox was not found for this user.");
         var existing = await db.MailRules.SingleOrDefaultAsync(x => x.Id == rule.Id && x.OwnerUserId == rule.OwnerUserId, cancellationToken);
+        if (existing is not null && HasSameConfiguration(existing, rule)) return;
         if (existing is null) db.MailRules.Add(rule); else db.Entry(existing).CurrentValues.SetValues(rule);
         await db.SaveChangesAsync(cancellationToken);
         if (audit is not null) await audit.RecordAsync(existing is null ? "rule.created" : "rule.updated", rule.OwnerUserId, rule.OwnerUserId, "rule", rule.Id.ToString("N"), cancellationToken: cancellationToken);
@@ -138,4 +139,10 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
         if (rule.DeliveredMessageRetentionDays is { } days && days is not (30 or 7 or 3 or 1))
             throw new ArgumentException("Destination retention must be Forever, 1 month, 1 week, 3 days, or 1 day.", nameof(rule));
     }
+
+    private static bool HasSameConfiguration(MailRule existing, MailRule proposed) =>
+        existing.OwnerUserId == proposed.OwnerUserId && existing.Action == proposed.Action && existing.Scope == proposed.Scope &&
+        existing.MatchType == proposed.MatchType && existing.MatchValue == proposed.MatchValue &&
+        existing.SourceMailboxId == proposed.SourceMailboxId && existing.EffectiveUtc == proposed.EffectiveUtc &&
+        existing.ExpiresUtc == proposed.ExpiresUtc && existing.DeliveredMessageRetentionDays == proposed.DeliveredMessageRetentionDays;
 }
