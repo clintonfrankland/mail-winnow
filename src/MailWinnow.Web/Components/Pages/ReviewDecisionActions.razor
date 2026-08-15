@@ -9,14 +9,14 @@
         <option value="">Forever</option><option value="30">1 month</option><option value="7">1 week</option><option value="3">3 days</option><option value="1">1 day</option>
     </select>
     <div class="split-action">
-        <button type="button" class="btn btn-success split-action-primary" disabled="@_busy" @onclick="AllowSenderAsync">@(_busy ? _busyLabel : "Allow sender")</button>
+        <button type="button" class="btn btn-success split-action-primary" disabled="@(_busy || SenderAddress is null)" @onclick="AllowSenderAsync">@(_busy ? _busyLabel : "Allow sender")</button>
         <div class="split-action-menu">
             <button type="button" class="btn btn-success split-action-toggle" disabled="@_busy" aria-label="More decisions" aria-expanded="@_menuOpen" @onclick="ToggleMenu"><span aria-hidden="true">▾</span></button>
             @if (_menuOpen)
             {
                 <div class="split-action-options" role="menu">
                 @if (Domain is { } domain) { <button type="button" role="menuitem" @onclick="() => DecideAsync(RuleAction.PermanentlyAllow, RuleMatchType.SenderDomain, domain)">Allow domain</button> }
-                <button type="button" role="menuitem" @onclick="() => DecideAsync(RuleAction.PermanentlyBlock, RuleMatchType.ExactSender, Sender)">Block sender</button>
+                <button type="button" role="menuitem" disabled="@(SenderAddress is null)" @onclick="BlockSenderAsync">Block sender</button>
                 @if (Domain is { } blockedDomain) { <button type="button" role="menuitem" @onclick="() => DecideAsync(RuleAction.PermanentlyBlock, RuleMatchType.SenderDomain, blockedDomain)">Block domain</button> }
                 <button type="button" role="menuitem" class="text-danger" @onclick="DeleteAsync">Delete</button>
                 </div>
@@ -35,12 +35,14 @@
     private string _busyLabel = "Working…";
     private string _selectedSender = string.Empty;
     private string Sender => _selectedSender;
-    private string? Domain { get { var at = Sender.LastIndexOf('@'); return at > 0 && at < Sender.Length - 1 ? Sender[(at + 1)..] : null; } }
+    private string? SenderAddress => RuleEvaluator.NormalizeSenderAddress(Sender);
+    private string? Domain { get { var at = SenderAddress?.LastIndexOf('@') ?? -1; return at >= 0 && at < SenderAddress!.Length - 1 ? SenderAddress[(at + 1)..] : null; } }
     protected override void OnParametersSet()
     {
         if (!Senders.Contains(_selectedSender, StringComparer.OrdinalIgnoreCase)) _selectedSender = Senders.FirstOrDefault() ?? string.Empty;
     }
-    private async Task AllowSenderAsync() => await DecideAsync(RuleAction.PermanentlyAllow, RuleMatchType.ExactSender, Sender);
+    private async Task AllowSenderAsync() { if (SenderAddress is { } sender) await DecideAsync(RuleAction.PermanentlyAllow, RuleMatchType.ExactSender, sender); }
+    private async Task BlockSenderAsync() { if (SenderAddress is { } sender) await DecideAsync(RuleAction.PermanentlyBlock, RuleMatchType.ExactSender, sender); }
     private async Task DeleteAsync() => await DecideAsync(RuleAction.DeleteOneMessage, RuleMatchType.ExactSender, Sender);
     private void ToggleMenu() => _menuOpen = !_menuOpen;
     private async Task DecideAsync(RuleAction action, RuleMatchType matchType, string value)

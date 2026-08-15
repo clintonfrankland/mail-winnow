@@ -9,8 +9,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <VersionPrefix>1.6.0</VersionPrefix>
-    <BuildNumber>95</BuildNumber>
+    <VersionPrefix>1.7.0</VersionPrefix>
+    <BuildNumber>100</BuildNumber>
     <Version>$(VersionPrefix)</Version>
     <AssemblyVersion>$(VersionPrefix).$(BuildNumber)</AssemblyVersion>
     <FileVersion>$(VersionPrefix).$(BuildNumber)</FileVersion>

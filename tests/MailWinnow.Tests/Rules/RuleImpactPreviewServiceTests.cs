@@ -81,6 +81,20 @@ public sealed class RuleImpactPreviewServiceTests
         Assert.DoesNotContain("Body", JsonSerializer.Serialize(block));
     }
 
+    [Fact]
+    public async Task Preview_UsesTheSameParsedSenderAddressAsRuleEvaluation()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.AddHeaderAsync("owner", "Example Sender <sender@example.test>", "Subject", f.Now);
+        var domainRule = Rule("owner", RuleAction.PermanentlyBlock);
+        domainRule.MatchType = RuleMatchType.SenderDomain;
+        domainRule.MatchValue = "example.test";
+
+        var result = await new RuleImpactPreviewService(f.Db).PreviewAsync("owner", domainRule, null, f.Now);
+
+        Assert.Equal(1, result.BlockCount);
+    }
+
     private static MailRule Rule(string owner, RuleAction action) => new() { OwnerUserId = owner, Action = action, Scope = RuleScope.User, MatchType = RuleMatchType.ExactSender, MatchValue = "sender@example.test" };
 
     private sealed class Fixture(SqliteConnection connection, MailWinnowDbContext db) : IAsyncDisposable

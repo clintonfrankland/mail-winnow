@@ -30,9 +30,7 @@ internal static class ReviewDecisionPageHelper
     {
         if (decision.Action == RuleAction.DeleteOneMessage) return decision.MessageIds.Contains(messageId);
         if (decision.MatchType == RuleMatchType.ExactSender)
-            return string.Equals(sender, decision.MatchValue, StringComparison.OrdinalIgnoreCase);
-        var at = sender.LastIndexOf('@');
-        return decision.MatchType == RuleMatchType.SenderDomain && at >= 0 &&
-            string.Equals(sender[(at + 1)..], decision.MatchValue.TrimStart('@'), StringComparison.OrdinalIgnoreCase);
+            return RuleEvaluator.SenderAddressMatches(sender, decision.MatchValue);
+        return decision.MatchType == RuleMatchType.SenderDomain && RuleEvaluator.SenderDomainMatches(sender, decision.MatchValue);
     }
 }

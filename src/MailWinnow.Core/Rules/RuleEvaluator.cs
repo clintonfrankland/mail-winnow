@@ -1,4 +1,5 @@
 using System.Text;
+using System.Net.Mail;
 
 namespace MailWinnow.Core.Rules;
 
@@ -65,6 +66,32 @@ public static class RuleEvaluator
 
     public static string NormalizeSubject(string? subject) => string.Join(' ', (subject ?? string.Empty).Normalize(NormalizationForm.FormKC).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 
+    /// <summary>Returns the address from a valid, single-mailbox From header, or null when it is unavailable or ambiguous.</summary>
+    public static string? NormalizeSenderAddress(string? sender)
+    {
+        if (string.IsNullOrWhiteSpace(sender)) return null;
+        var value = sender.Trim();
+        if (HasTopLevelMailboxSeparator(value)) return null;
+
+        try
+        {
+            var address = new MailAddress(value).Address;
+            return string.IsNullOrWhiteSpace(address) ? null : address.Trim();
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    public static bool SenderAddressMatches(string? sender, string? matchValue) =>
+        !string.IsNullOrWhiteSpace(matchValue) &&
+        string.Equals(NormalizeSenderAddress(sender), matchValue.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    public static bool SenderDomainMatches(string? sender, string? matchValue) =>
+        !string.IsNullOrWhiteSpace(matchValue) &&
+        string.Equals(SenderDomain(sender), matchValue.Trim().TrimStart('@'), StringComparison.OrdinalIgnoreCase);
+
     private static bool IsActive(RuleCandidate rule, DateTimeOffset nowUtc) =>
         rule.Action != RuleAction.TemporarilyAllow ||
         ((!rule.EffectiveUtc.HasValue || rule.EffectiveUtc <= nowUtc) && (!rule.ExpiresUtc.HasValue || rule.ExpiresUtc > nowUtc));
@@ -75,8 +102,8 @@ public static class RuleEvaluator
         var value = rule.MatchValue.Trim();
         return rule.MatchType switch
         {
-            RuleMatchType.ExactSender => string.Equals(sender?.Trim(), value, StringComparison.OrdinalIgnoreCase),
-            RuleMatchType.SenderDomain => string.Equals(SenderDomain(sender), value.TrimStart('@'), StringComparison.OrdinalIgnoreCase),
+            RuleMatchType.ExactSender => SenderAddressMatches(sender, value),
+            RuleMatchType.SenderDomain => SenderDomainMatches(sender, value),
             RuleMatchType.NormalizedExactSubject => string.Equals(NormalizeSubject(subject), NormalizeSubject(value), StringComparison.Ordinal),
             RuleMatchType.SubjectContains => NormalizeSubject(subject).Contains(NormalizeSubject(value), StringComparison.Ordinal),
             _ => false
@@ -85,9 +112,28 @@ public static class RuleEvaluator
 
     private static string? SenderDomain(string? sender)
     {
-        var address = sender?.Trim();
+        var address = NormalizeSenderAddress(sender);
         var at = address?.LastIndexOf('@') ?? -1;
         return at >= 0 && at < address!.Length - 1 ? address[(at + 1)..] : null;
+    }
+
+    private static bool HasTopLevelMailboxSeparator(string value)
+    {
+        var inQuotes = false;
+        var escaped = false;
+        var angleDepth = 0;
+        foreach (var character in value)
+        {
+            if (escaped) { escaped = false; continue; }
+            if (inQuotes && character == '\\') { escaped = true; continue; }
+            if (character == '"') { inQuotes = !inQuotes; continue; }
+            if (inQuotes) continue;
+            if (character == '<') { angleDepth++; continue; }
+            if (character == '>') { if (angleDepth > 0) angleDepth--; continue; }
+            if (angleDepth == 0 && character is ',' or ';' or ':') return true;
+        }
+
+        return false;
     }
 
     private static RuleOutcome OutcomeFor(RuleAction action) => action switch
