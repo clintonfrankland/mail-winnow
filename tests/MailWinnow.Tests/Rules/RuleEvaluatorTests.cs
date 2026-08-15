@@ -98,6 +98,17 @@ public sealed class RuleEvaluatorTests
         Assert.Equal(RuleOutcome.Pending, RuleEvaluator.Evaluate([domain], from, "Invoice", AccountId, Now).Outcome);
     }
 
+    [Fact]
+    public void Evaluate_LocalOnlyFromDoesNotMatchSameValueSenderRules()
+    {
+        const string localOnlyAddress = "sender";
+        var exact = Rule(RuleAction.PermanentlyAllow, RuleScope.User, localOnlyAddress);
+        var domain = Rule(RuleAction.PermanentlyAllow, RuleScope.User, localOnlyAddress) with { MatchType = RuleMatchType.SenderDomain };
+
+        Assert.Equal(RuleOutcome.Pending, RuleEvaluator.Evaluate([exact], localOnlyAddress, "Invoice", AccountId, Now).Outcome);
+        Assert.Equal(RuleOutcome.Pending, RuleEvaluator.Evaluate([domain], localOnlyAddress, "Invoice", AccountId, Now).Outcome);
+    }
+
     [Theory]
     [InlineData(RuleMatchType.ExactSender, "sender@example.test", "sender@example.test", "anything")]
     [InlineData(RuleMatchType.SenderDomain, "example.test", "sender@example.test", "anything")]

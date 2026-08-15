@@ -76,7 +76,11 @@ public static class RuleEvaluator
         try
         {
             var address = new MailAddress(value).Address;
-            return string.IsNullOrWhiteSpace(address) ? null : address.Trim();
+            if (string.IsNullOrWhiteSpace(address)) return null;
+
+            address = address.Trim();
+            var at = address.LastIndexOf('@');
+            return at > 0 && at < address.Length - 1 ? address : null;
         }
         catch (FormatException)
         {
