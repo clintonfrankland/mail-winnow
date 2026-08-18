@@ -88,13 +88,16 @@ public static class RuleEvaluator
         }
     }
 
-    public static bool SenderAddressMatches(string? sender, string? matchValue) =>
-        !string.IsNullOrWhiteSpace(matchValue) &&
-        string.Equals(NormalizeSenderAddress(sender), matchValue.Trim(), StringComparison.OrdinalIgnoreCase);
+    public static bool SenderAddressMatches(string? sender, string? matchValue)
+    {
+        var senderAddress = NormalizeSenderAddress(sender);
+        return senderAddress is not null &&
+            string.Equals(senderAddress, NormalizeSenderAddress(matchValue), StringComparison.OrdinalIgnoreCase);
+    }
 
     public static bool SenderDomainMatches(string? sender, string? matchValue) =>
         !string.IsNullOrWhiteSpace(matchValue) &&
-        string.Equals(SenderDomain(sender), matchValue.Trim().TrimStart('@'), StringComparison.OrdinalIgnoreCase);
+        string.Equals(SenderDomain(sender), NormalizeRuleDomain(matchValue), StringComparison.OrdinalIgnoreCase);
 
     private static bool IsActive(RuleCandidate rule, DateTimeOffset nowUtc) =>
         rule.Action != RuleAction.TemporarilyAllow ||
@@ -119,6 +122,20 @@ public static class RuleEvaluator
         var address = NormalizeSenderAddress(sender);
         var at = address?.LastIndexOf('@') ?? -1;
         return at >= 0 && at < address!.Length - 1 ? address[(at + 1)..] : null;
+    }
+
+    private static string? NormalizeRuleDomain(string? matchValue)
+    {
+        if (string.IsNullOrWhiteSpace(matchValue)) return null;
+        var address = NormalizeSenderAddress(matchValue);
+        if (address is not null) return SenderDomain(address);
+
+        // Before sender normalization, the review UI derived domains from the raw
+        // From header and persisted the closing angle bracket (for example,
+        // "example.test>"). Preserve those existing rules while new rules store
+        // the canonical bare domain.
+        var domain = matchValue.Trim().TrimStart('@').TrimEnd('>').Trim();
+        return string.IsNullOrWhiteSpace(domain) ? null : domain;
     }
 
     private static bool HasTopLevelMailboxSeparator(string value)

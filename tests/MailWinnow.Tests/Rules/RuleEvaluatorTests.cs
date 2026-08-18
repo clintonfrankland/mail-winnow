@@ -76,11 +76,29 @@ public sealed class RuleEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_ExactSenderPreservesLegacyFullFromRules()
+    {
+        var rule = Rule(RuleAction.PermanentlyAllow, RuleScope.User, "\"Example Sender\" <SENDER@example.test>");
+
+        Assert.Equal(RuleOutcome.Allow,
+            RuleEvaluator.Evaluate([rule], "Updated Display Name <sender@example.test>", "Invoice", AccountId, Now).Outcome);
+    }
+
+    [Fact]
     public void Evaluate_SenderDomainUsesParsedMailboxAddress()
     {
         var rule = Rule(RuleAction.PermanentlyAllow, RuleScope.User, " @example.test ") with { MatchType = RuleMatchType.SenderDomain };
 
         Assert.Equal(RuleOutcome.Allow, RuleEvaluator.Evaluate([rule], "\"Example Sender\" <sender@EXAMPLE.test>", "Invoice", AccountId, Now).Outcome);
+    }
+
+    [Fact]
+    public void Evaluate_SenderDomainPreservesLegacyTrailingAngleBracketRules()
+    {
+        var rule = Rule(RuleAction.PermanentlyBlock, RuleScope.User, "example.test>") with { MatchType = RuleMatchType.SenderDomain };
+
+        Assert.Equal(RuleOutcome.Block,
+            RuleEvaluator.Evaluate([rule], "Example Sender <sender@example.test>", "Invoice", AccountId, Now).Outcome);
     }
 
     [Theory]
