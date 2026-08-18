@@ -16,7 +16,7 @@ internal static class ReviewDecisionPageHelper
                 decision.RetentionDays, decision.MessageIds);
             if (!result.Succeeded) { setError(result.Message); return false; }
             var verb = decision.Action switch { RuleAction.PermanentlyBlock => "Block", RuleAction.DeleteOneMessage => "Deletion", _ => "Allow" };
-            setSaved($"{verb} queued.");
+            setSaved($"{verb} accepted.");
             return true;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)

@@ -10,6 +10,7 @@ public interface IRuleEvaluationService
 {
     Task<RuleEvaluation> EvaluateAsync(string ownerUserId, Guid headerId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
     Task ReevaluatePendingHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default);
+    Task ReevaluateOwnedHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Owner-bound evaluation and safe pending-header reevaluation on rule changes.</summary>
@@ -32,11 +33,39 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDelive
 
     public async Task ReevaluatePendingHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default)
     {
-        var headers = await db.SourceMessageHeaders
-            .Where(x => x.EvaluationOutcome == RuleOutcome.Pending && db.SourceMailboxes.Any(m => m.Id == x.SourceMailboxId && m.OwnerUserId == ownerUserId))
-            .Select(x => x.Id).ToListAsync(cancellationToken);
+        await ReevaluateAsync(ownerUserId, true, cancellationToken);
+    }
+
+    public Task ReevaluateOwnedHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default) => ReevaluateAsync(ownerUserId, false, cancellationToken);
+
+    private async Task ReevaluateAsync(string ownerUserId, bool pendingOnly, CancellationToken cancellationToken)
+    {
+        var rules = await db.MailRules.Where(x => x.OwnerUserId == ownerUserId).ToListAsync(cancellationToken);
+        var candidates = rules.Select(ToCandidate).ToArray();
         var now = DateTimeOffset.UtcNow;
-        foreach (var id in headers) await EvaluateAsync(ownerUserId, id, now, cancellationToken);
+        Guid? cursor = null;
+        while (true)
+        {
+            var query = db.SourceMessageHeaders.Where(x => db.SourceMailboxes.Any(m => m.Id == x.SourceMailboxId && m.OwnerUserId == ownerUserId));
+            if (pendingOnly) query = query.Where(x => x.EvaluationOutcome == RuleOutcome.Pending);
+            if (cursor is { } after) query = query.Where(x => x.Id.CompareTo(after) > 0);
+            var headers = await query.OrderBy(x => x.Id).Take(200).ToListAsync(cancellationToken);
+            if (headers.Count == 0) return;
+            var ids = headers.Select(x => x.Id).ToArray();
+            var decisions = await db.MessageDecisions.Where(x => x.OwnerUserId == ownerUserId && ids.Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
+            var approved = new List<(Guid HeaderId, Guid? RuleId)>();
+            foreach (var header in headers)
+            {
+                var result = RuleEvaluator.Evaluate(candidates, header.From, header.Subject, header.SourceMailboxId, now, decisions.GetValueOrDefault(header.Id)?.Action);
+                header.EvaluationOutcome = result.Outcome;
+                header.EvaluatedUtc = now;
+                if (result.Outcome == RuleOutcome.Allow) approved.Add((header.Id, result.AppliedRule?.Id));
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            if (deliveries is not null)
+                foreach (var approvedHeader in approved) await deliveries.QueueApprovedAsync(ownerUserId, approvedHeader.HeaderId, approvedHeader.RuleId, cancellationToken);
+            cursor = headers[^1].Id;
+        }
     }
 
     private async Task<SourceMessageHeader> HeaderForOwnerAsync(string ownerUserId, Guid headerId, CancellationToken cancellationToken) =>
@@ -122,9 +151,7 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
 
     private async Task ReevaluateOwnedHeadersAsync(string ownerUserId, CancellationToken cancellationToken)
     {
-        var ids = await db.SourceMessageHeaders.Where(x => db.SourceMailboxes.Any(m => m.Id == x.SourceMailboxId && m.OwnerUserId == ownerUserId)).Select(x => x.Id).ToListAsync(cancellationToken);
-        var now = DateTimeOffset.UtcNow;
-        foreach (var id in ids) await evaluation.EvaluateAsync(ownerUserId, id, now, cancellationToken);
+        await evaluation.ReevaluateOwnedHeadersAsync(ownerUserId, cancellationToken);
     }
 
     private static void Validate(MailRule rule)

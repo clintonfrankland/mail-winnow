@@ -19,6 +19,7 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
     public DbSet<SourceMessageHeader> SourceMessageHeaders => Set<SourceMessageHeader>();
     public DbSet<MailRule> MailRules => Set<MailRule>();
     public DbSet<MessageDecision> MessageDecisions => Set<MessageDecision>();
+    public DbSet<ReviewDecisionWorkItem> ReviewDecisionWorkItems => Set<ReviewDecisionWorkItem>();
     public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
@@ -71,6 +72,18 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.HasKey(x => x.Id);
             entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
             entity.HasIndex(x => new { x.OwnerUserId, x.SourceMessageHeaderId }).IsUnique();
+        });
+        builder.Entity<ReviewDecisionWorkItem>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450).IsRequired();
+            entity.Property(x => x.MatchValue).HasMaxLength(2000).IsRequired();
+            entity.Property(x => x.MessageIdsJson).IsRequired();
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(x => x.LastError).HasMaxLength(512);
+            entity.HasIndex(x => new { x.OwnerUserId, x.IdempotencyKey }).IsUnique();
+            entity.HasIndex(x => new { x.Status, x.NextAttemptUtc, x.CreatedUtc });
         });
         builder.Entity<DestinationMailbox>(entity =>
         {

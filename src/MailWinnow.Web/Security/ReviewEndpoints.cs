@@ -19,8 +19,10 @@ public static class ReviewEndpoints
         group.MapPost("/messages/approve", ApproveManyAsync);
         group.MapPost("/message/undo", UndoAsync);
         group.MapPost("/delivery/retry", RetryDeliveryAsync);
+        group.MapGet("/queue/metrics", GetQueueMetricsAsync);
         return endpoints;
     }
+    private static async Task<IResult> GetQueueMetricsAsync(IReviewDecisionQueue queue, CancellationToken ct) => Results.Ok(await queue.GetMetricsAsync(ct));
 
     internal static async Task<IResult> AddRuleAsync(HttpContext context, [FromForm] RuleRequest request, IRuleManagementService rules, IRuleImpactPreviewService previews, IOwnershipAuthorizer ownership, IDataProtectionProvider protection, CancellationToken ct)
     {

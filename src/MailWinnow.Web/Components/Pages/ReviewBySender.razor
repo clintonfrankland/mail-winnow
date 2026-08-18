@@ -30,14 +30,15 @@
     private async Task ReloadAsync() { _senders = await ReviewService.GetBySenderAsync(User, new MessageReviewFilter(null, RuleOutcome.Pending, null)); PublishCounts(); }
     private async Task ApplyDecisionAsync(ReviewDecisionRequest decision)
     {
-        var previous = _senders;
-        _senders = _senders.Where(group => decision.Action == RuleAction.DeleteOneMessage
-            ? !group.MessageIds.Any(decision.MessageIds.Contains)
-            : !group.Senders.Any(sender => ReviewDecisionPageHelper.Matches(decision, Guid.Empty, sender))).ToArray();
-        PublishCounts();
-        StateHasChanged();
         var queued = await ReviewDecisionPageHelper.QueueAsync(User, decision, DecisionQueue, value => Saved = value, value => Error = value);
-        if (!queued) { _senders = previous; PublishCounts(); }
+        if (queued)
+        {
+            _senders = _senders.Where(group => decision.Action == RuleAction.DeleteOneMessage
+                ? !group.MessageIds.Any(decision.MessageIds.Contains)
+                : !group.Senders.Any(sender => ReviewDecisionPageHelper.Matches(decision, Guid.Empty, sender))).ToArray();
+            PublishCounts();
+            StateHasChanged();
+        }
     }
     private void PublishCounts() => CountState.SetReviewCounts(_senders.Sum(group => group.Count), _senders.Count);
 }
