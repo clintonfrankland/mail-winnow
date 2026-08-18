@@ -77,6 +77,14 @@ public sealed class ReviewDecisionQueueTests
         var restarted = new ReviewDecisionQueue(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ReviewDecisionQueue>.Instance);
         await restarted.StartAsync(CancellationToken.None);
         await evaluations.Reevaluated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // Evaluation has returned, but stopping at that point used to race the following SaveChanges.
+        // Wait for the durable completion boundary before simulating the second shutdown.
+        await EventuallyAsync(async () =>
+        {
+            await using var check = provider.CreateAsyncScope();
+            return (await check.ServiceProvider.GetRequiredService<MailWinnowDbContext>()
+                .ReviewDecisionWorkItems.FindAsync(id))?.Status == ReviewDecisionWorkStatus.Completed;
+        });
         await restarted.StopAsync(CancellationToken.None);
 
         await using var verification = provider.CreateAsyncScope();
@@ -105,6 +113,103 @@ public sealed class ReviewDecisionQueueTests
         Assert.All(outcomes, result => Assert.True(result.Succeeded));
         await using var verification = provider.CreateAsyncScope();
         Assert.Single(await verification.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.ToListAsync());
+    }
+
+    [Fact]
+    public async Task TransientFailureIsRetriedAndCompletedDurably()
+    {
+        var rules = new RecordingRuleManagementService();
+        var evaluations = new FailingEvaluationService(failuresBeforeSuccess: 1);
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var services = new ServiceCollection();
+        services.AddDbContext<MailWinnowDbContext>(options => options.UseSqlite(connection));
+        services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
+        services.AddScoped<IRuleManagementService>(_ => rules);
+        services.AddScoped<IRuleEvaluationService>(_ => evaluations);
+        await using var provider = services.BuildServiceProvider();
+        await using (var setup = provider.CreateAsyncScope())
+            await setup.ServiceProvider.GetRequiredService<MailWinnowDbContext>().Database.EnsureCreatedAsync();
+        var queue = new ReviewDecisionQueue(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ReviewDecisionQueue>.Instance);
+        Assert.True((await queue.QueueAsync(Principal("owner"), RuleAction.PermanentlyAllow,
+            RuleMatchType.ExactSender, "retry@test", null, [])).Succeeded);
+        await queue.StartAsync(CancellationToken.None);
+
+        await evaluations.FirstFailure.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await EventuallyAsync(async () =>
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var item = await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.SingleAsync();
+            if (item.Status != ReviewDecisionWorkStatus.Retrying) return false;
+            item.NextAttemptUtc = DateTimeOffset.UtcNow;
+            await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>().SaveChangesAsync();
+            return true;
+        });
+        await EventuallyAsync(async () =>
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return (await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.SingleAsync()).Status == ReviewDecisionWorkStatus.Completed;
+        });
+        await queue.StopAsync(CancellationToken.None);
+
+        await using var verification = provider.CreateAsyncScope();
+        var completed = await verification.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.SingleAsync();
+        Assert.Equal(2, completed.AttemptCount);
+        Assert.Equal(ReviewDecisionWorkStatus.Completed, completed.Status);
+    }
+
+    [Fact]
+    public async Task RepeatedFailuresBecomeTerminalAndRemainObservable()
+    {
+        var evaluations = new FailingEvaluationService(failuresBeforeSuccess: int.MaxValue);
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var services = new ServiceCollection();
+        services.AddDbContext<MailWinnowDbContext>(options => options.UseSqlite(connection));
+        services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
+        services.AddScoped<IRuleManagementService, RecordingRuleManagementService>();
+        services.AddScoped<IRuleEvaluationService>(_ => evaluations);
+        await using var provider = services.BuildServiceProvider();
+        await using (var setup = provider.CreateAsyncScope())
+            await setup.ServiceProvider.GetRequiredService<MailWinnowDbContext>().Database.EnsureCreatedAsync();
+        var queue = new ReviewDecisionQueue(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ReviewDecisionQueue>.Instance);
+        Assert.True((await queue.QueueAsync(Principal("owner"), RuleAction.PermanentlyBlock,
+            RuleMatchType.ExactSender, "fail@test", null, [])).Succeeded);
+        await queue.StartAsync(CancellationToken.None);
+
+        for (var attempt = 1; attempt < 3; attempt++)
+        {
+            await evaluations.WaitForFailuresAsync(attempt);
+            await EventuallyAsync(async () =>
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var item = await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.SingleAsync();
+                if (item.Status != ReviewDecisionWorkStatus.Retrying) return false;
+                item.NextAttemptUtc = DateTimeOffset.UtcNow;
+                await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>().SaveChangesAsync();
+                return true;
+            });
+        }
+        await EventuallyAsync(async () =>
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return (await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.SingleAsync()).Status == ReviewDecisionWorkStatus.Failed;
+        });
+        await queue.StopAsync(CancellationToken.None);
+
+        var metrics = await queue.GetMetricsAsync();
+        Assert.Equal(1, metrics.TerminalFailures);
+    }
+
+    private static async Task EventuallyAsync(Func<Task<bool>> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!timeout.IsCancellationRequested)
+        {
+            if (await condition()) return;
+            await Task.Delay(25, timeout.Token);
+        }
+        Assert.Fail("Condition did not become true before timeout.");
     }
 
     private static ClaimsPrincipal Principal(string id) => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, id)], "test"));
@@ -144,5 +249,26 @@ public sealed class ReviewDecisionQueueTests
             Reevaluated.TrySetResult();
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FailingEvaluationService(int failuresBeforeSuccess) : IRuleEvaluationService
+    {
+        private int _failuresRemaining = failuresBeforeSuccess;
+        private int _failureCount;
+        public TaskCompletionSource FirstFailure { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<RuleEvaluation> EvaluateAsync(string ownerUserId, Guid headerId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task ReevaluatePendingHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task ReevaluateOwnedHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Decrement(ref _failuresRemaining) >= 0)
+            {
+                var count = Interlocked.Increment(ref _failureCount);
+                FirstFailure.TrySetResult();
+                throw new InvalidOperationException($"Expected test failure {count}.");
+            }
+            return Task.CompletedTask;
+        }
+
+        public async Task WaitForFailuresAsync(int expected) => await EventuallyAsync(() => Task.FromResult(Volatile.Read(ref _failureCount) >= expected));
     }
 }

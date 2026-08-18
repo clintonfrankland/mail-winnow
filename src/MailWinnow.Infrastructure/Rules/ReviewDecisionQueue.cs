@@ -65,11 +65,15 @@ public sealed class ReviewDecisionQueue(IServiceScopeFactory scopes, ILogger<Rev
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
         var items = db.ReviewDecisionWorkItems.AsNoTracking();
+        // SQLite cannot aggregate or sort DateTimeOffset.  The operational queue is bounded by
+        // pending/retrying commands, so calculate this presentation-only metric client-side.
+        var oldestPendingUtc = (await items.Where(x => x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Retrying)
+            .Select(x => x.CreatedUtc).ToListAsync(cancellationToken)).DefaultIfEmpty().Min();
         return new(await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Pending, cancellationToken),
             await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Processing, cancellationToken),
             await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Retrying, cancellationToken),
             await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Failed, cancellationToken),
-            await items.Where(x => x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Retrying).MinAsync(x => (DateTimeOffset?)x.CreatedUtc, cancellationToken));
+            oldestPendingUtc == default ? null : oldestPendingUtc);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
