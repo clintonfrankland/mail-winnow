@@ -31,6 +31,28 @@ public sealed class RuleEvaluationServiceTests
     }
 
     [Fact]
+    public async Task ReevaluateOwnedHeaders_ProcessesCatalogsLargerThanOneThousandThreeHundredInBatches()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var source = new SourceMailbox { OwnerUserId = "owner", DisplayName = "owner", Host = "imap.test", Port = 993,
+            Username = "owner@test", ProtectedCredential = "protected" };
+        fixture.Db.SourceMailboxes.Add(source);
+        fixture.Db.SourceMessageHeaders.AddRange(Enumerable.Range(1, 1300).Select(uid => new SourceMessageHeader
+        {
+            SourceMailboxId = source.Id, FolderName = "INBOX", UidValidity = 1, Uid = (uint)uid,
+            From = "offers@example.test", Subject = "Sale", ReceivedUtc = DateTimeOffset.UtcNow
+        }));
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.MailRules.Add(new MailRule { OwnerUserId = "owner", Action = RuleAction.PermanentlyAllow,
+            Scope = RuleScope.User, MatchType = RuleMatchType.SenderDomain, MatchValue = "example.test" });
+        await fixture.Db.SaveChangesAsync();
+
+        await new RuleEvaluationService(fixture.Db).ReevaluateOwnedHeadersAsync("owner");
+
+        Assert.Equal(1300, await fixture.Db.SourceMessageHeaders.CountAsync(x => x.EvaluationOutcome == RuleOutcome.Allow));
+    }
+
+    [Fact]
     public async Task MessageDecision_CannotCrossOwnershipBoundary()
     {
         await using var fixture = await Fixture.CreateAsync();

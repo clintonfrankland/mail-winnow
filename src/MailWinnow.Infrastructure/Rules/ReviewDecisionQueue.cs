@@ -124,6 +124,14 @@ public sealed class ReviewDecisionQueue(IServiceScopeFactory scopes, ILogger<Rev
             {
                 var existing = await db.MailRules.AsNoTracking().FirstOrDefaultAsync(x => x.OwnerUserId == item.OwnerUserId && x.Scope == RuleScope.User && x.MatchType == item.MatchType && x.MatchValue.ToLower() == item.MatchValue.ToLower(), cancellationToken);
                 await rules.AddOrUpdateAsync(new MailRule { Id = existing?.Id ?? item.Id, OwnerUserId = item.OwnerUserId, Action = item.Action, Scope = RuleScope.User, MatchType = item.MatchType, MatchValue = item.MatchValue, DeliveredMessageRetentionDays = item.RetentionDays }, cancellationToken);
+
+                // AddOrUpdateAsync intentionally returns early for an identical persisted rule.  That is
+                // normally useful, but a process can die after persisting that rule and before its
+                // previous catalog pass finishes.  The work item's completion boundary therefore owns
+                // a replay-safe full pass: retries always finish the pass before acknowledging work.
+                // Evaluation and delivery are idempotent, so redoing a completed pass is safe too.
+                await scope.ServiceProvider.GetRequiredService<IRuleEvaluationService>()
+                    .ReevaluateOwnedHeadersAsync(item.OwnerUserId, cancellationToken);
             }
             item.Status = ReviewDecisionWorkStatus.Completed; item.CompletedUtc = DateTimeOffset.UtcNow; item.LastError = null;
             await db.SaveChangesAsync(cancellationToken);
