@@ -82,7 +82,10 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
             entity.Property(x => x.IdempotencyKey).HasMaxLength(64).IsRequired();
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
             entity.Property(x => x.LastError).HasMaxLength(512);
-            entity.HasIndex(x => new { x.OwnerUserId, x.IdempotencyKey }).IsUnique();
+            // A command key prevents overlapping duplicate clicks, not a later legitimate
+            // recurrence of the same action (for example allow, block, then allow again).
+            entity.HasIndex(x => new { x.OwnerUserId, x.IdempotencyKey }).IsUnique()
+                .HasFilter("[Status] IN ('Pending', 'Processing', 'Retrying')");
             entity.HasIndex(x => new { x.Status, x.NextAttemptUtc, x.CreatedUtc });
         });
         builder.Entity<DestinationMailbox>(entity =>

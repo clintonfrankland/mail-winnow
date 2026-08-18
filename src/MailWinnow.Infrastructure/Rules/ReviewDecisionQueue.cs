@@ -41,7 +41,8 @@ public sealed class ReviewDecisionQueue(IServiceScopeFactory scopes, ILogger<Rev
         var ids = messageIds.Distinct().Order().ToArray();
         var key = CreateIdempotencyKey(action, matchType, normalizedValue, action == RuleAction.PermanentlyAllow ? retentionDays : null, ids);
         var db = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
-        if (await db.ReviewDecisionWorkItems.AnyAsync(x => x.OwnerUserId == ownerId && x.IdempotencyKey == key, cancellationToken))
+        if (await db.ReviewDecisionWorkItems.AnyAsync(x => x.OwnerUserId == ownerId && x.IdempotencyKey == key &&
+                (x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Processing || x.Status == ReviewDecisionWorkStatus.Retrying), cancellationToken))
             return new(true, "Review decision was already accepted.");
         db.ReviewDecisionWorkItems.Add(new ReviewDecisionWorkItem
         {
@@ -53,9 +54,10 @@ public sealed class ReviewDecisionQueue(IServiceScopeFactory scopes, ILogger<Rev
         try { await db.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateException)
         {
-            // The unique owner/key index is the final duplicate-click guard. A concurrent accepted command is still success to the caller.
+            // The filtered unique owner/key index is the final active duplicate-click guard. A concurrent accepted command is still success to the caller.
             db.ChangeTracker.Clear();
-            if (!await db.ReviewDecisionWorkItems.AnyAsync(x => x.OwnerUserId == ownerId && x.IdempotencyKey == key, cancellationToken)) throw;
+            if (!await db.ReviewDecisionWorkItems.AnyAsync(x => x.OwnerUserId == ownerId && x.IdempotencyKey == key &&
+                    (x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Processing || x.Status == ReviewDecisionWorkStatus.Retrying), cancellationToken)) throw;
         }
         return new(true, "Review decision was accepted.");
     }
