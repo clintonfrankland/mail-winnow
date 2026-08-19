@@ -137,6 +137,22 @@ public sealed class ReviewDashboardAccessibilityTests
     }
 
     [Fact]
+    public void NavigationRendersBeforeCountLoadingStarts()
+    {
+        var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
+
+        Assert.Contains("> Inbox ", navigation);
+        Assert.Contains("Review - Recent", navigation);
+        Assert.Contains("Review - Sender", navigation);
+        Assert.Contains("> Rules</NavLink>", navigation);
+        Assert.Contains("> Mailboxes</NavLink>", navigation);
+        Assert.Contains("> Sign out</button>", navigation);
+        Assert.Contains("OnAfterRenderAsync(bool firstRender)", navigation);
+        Assert.Contains("NavigationCountLoader.Start(() => LoadInboxCountAsync(user), () => LoadReviewCountsAsync(user))", navigation);
+        Assert.DoesNotContain("override async Task OnInitializedAsync()", navigation);
+    }
+
+    [Fact]
     public void RulesPageProvidesCreateEditRemoveAndRetentionControls()
     {
         var source = File.ReadAllText(FindPage("Rules.razor"));

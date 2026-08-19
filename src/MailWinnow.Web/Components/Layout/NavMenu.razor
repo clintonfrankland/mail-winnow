@@ -1,7 +1,9 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Security.Claims
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationCountState CountState
+@inject ILogger<NavMenu> Logger
 @implements IDisposable
 
 <div class="brand-row"><a class="brand" href="" aria-label="Mail Winnow home"><img class="brand-mark brand-mark-plain" src="mail-winnow-mark-bordered.png" alt="" /><span><strong>Mail Winnow</strong><small>Mail worth keeping</small></span></a></div>
@@ -26,29 +28,65 @@
 @code {
     private static string AppVersion => typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         CountState.Changed += OnCountsChanged;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _ = LoadCountsAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadCountsAsync()
+    {
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         if (user.Identity?.IsAuthenticated != true)
         {
             return;
         }
 
-        await using (var inboxScope = ScopeFactory.CreateAsyncScope())
+        NavigationCountLoader.Start(() => LoadInboxCountAsync(user), () => LoadReviewCountsAsync(user));
+    }
+
+    private async Task LoadInboxCountAsync(ClaimsPrincipal user)
+    {
+        try
         {
-            var inbox = await inboxScope.ServiceProvider.GetRequiredService<IInboxReaderService>().CountAsync(user);
-            if (inbox.Succeeded)
+            await using (var inboxScope = ScopeFactory.CreateAsyncScope())
             {
-                CountState.SetInboxCount(inbox.Value);
+                var inbox = await inboxScope.ServiceProvider.GetRequiredService<IInboxReaderService>().CountAsync(user);
+                if (inbox.Succeeded)
+                {
+                    CountState.SetInboxCount(inbox.Value);
+                }
             }
         }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Inbox navigation count could not be loaded");
+        }
+    }
 
-        await using var reviewScope = ScopeFactory.CreateAsyncScope();
-        var messages = await reviewScope.ServiceProvider.GetRequiredService<IMessageReviewService>()
-            .GetRecentAsync(user, new MessageReviewFilter(null, RuleOutcome.Pending, null));
-        CountState.SetReviewCounts(messages.Count,
-            messages.Select(message => message.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    private async Task LoadReviewCountsAsync(ClaimsPrincipal user)
+    {
+        try
+        {
+            await using var reviewScope = ScopeFactory.CreateAsyncScope();
+            var messages = await reviewScope.ServiceProvider.GetRequiredService<IMessageReviewService>()
+                .GetRecentAsync(user, new MessageReviewFilter(null, RuleOutcome.Pending, null));
+            CountState.SetReviewCounts(messages.Count,
+                messages.Select(message => message.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Review navigation counts could not be loaded");
+        }
     }
 
     private void OnCountsChanged() => _ = InvokeAsync(StateHasChanged);
