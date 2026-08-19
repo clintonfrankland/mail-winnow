@@ -15,7 +15,7 @@
 {
     var expanded = _expanded.Contains(item.Id);
     <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender</div><div class="review-meta">Newest @item.ReceivedUtc.ToString("u")</div></div></div><div class="decision-actions">
-        <button class="btn btn-outline-secondary" aria-expanded="@expanded" aria-controls="preview-@item.Id" @onclick="() => Toggle(item.Id)">@(expanded ? "Hide preview" : "Preview message")</button>
+        <button class="btn btn-outline-secondary" aria-expanded="@(expanded ? "true" : "false")" aria-controls="preview-@item.Id" @onclick="() => Toggle(item.Id)">@(expanded ? "Hide preview" : "Preview message")</button>
         <ReviewDecisionActions Senders="@(new[] { item.Sender })" MessageIds="@(new[] { item.Id })" OnDecision="ApplyDecisionAsync" />
     </div>@if (expanded) { <div id="preview-@item.Id"><ReviewMessagePreview Item="item" /></div> }</article>
 }

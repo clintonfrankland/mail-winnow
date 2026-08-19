@@ -258,9 +258,9 @@ public sealed class ReviewDashboardAccessibilityTests
         var senderStyles = File.ReadAllText(FindPage("ReviewBySender.razor.css"));
         var previewStyles = File.ReadAllText(FindPage("ReviewMessagePreview.razor.css"));
 
-        Assert.Contains("aria-expanded=\"@expanded\"", recent);
-        Assert.Contains("aria-expanded=\"@groupExpanded\"", sender);
-        Assert.Contains("aria-expanded=\"@previewExpanded\"", sender);
+        Assert.Contains("aria-expanded=\"@(expanded ? \"true\" : \"false\")\"", recent);
+        Assert.Contains("aria-expanded=\"@(groupExpanded ? \"true\" : \"false\")\"", sender);
+        Assert.Contains("aria-expanded=\"@(previewExpanded ? \"true\" : \"false\")\"", sender);
         Assert.Contains("@if (expanded) { <div id=\"preview-@item.Id\"><ReviewMessagePreview", recent);
         Assert.Contains("@if (previewExpanded) { <div id=\"preview-@item.Id\"><ReviewMessagePreview", sender);
         Assert.Contains("OrderByDescending(x => x.ReceivedUtc)", sender);

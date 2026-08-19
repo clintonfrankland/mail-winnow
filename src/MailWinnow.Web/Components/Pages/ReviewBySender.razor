@@ -15,7 +15,7 @@
 {
     var groupExpanded = _expandedGroups.Contains(group.Value);
     <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@group.Value</h2><div class="review-meta"><strong>Subjects:</strong> @string.Join("; ", group.Samples)</div><div class="review-meta review-count">@group.Count @(group.Count == 1 ? "message" : "messages") <span aria-hidden="true">·</span> Newest @group.MostRecentUtc.ToString("u")</div></div></div><div class="decision-actions">
-        <button class="btn btn-outline-secondary" aria-expanded="@groupExpanded" aria-controls="sender-@group.Value.GetHashCode()" @onclick="() => ToggleGroup(group.Value)">@(groupExpanded ? "Hide messages" : "View messages")</button>
+        <button class="btn btn-outline-secondary" aria-expanded="@(groupExpanded ? "true" : "false")" aria-controls="sender-@group.Value.GetHashCode()" @onclick="() => ToggleGroup(group.Value)">@(groupExpanded ? "Hide messages" : "View messages")</button>
         <ReviewDecisionActions Senders="@group.Senders" MessageIds="@group.MessageIds" OnDecision="ApplyDecisionAsync" />
     </div>
     @if (groupExpanded)
@@ -24,7 +24,7 @@
         @foreach (var item in _recent.Where(x => group.MessageIds.Contains(x.Id)).OrderByDescending(x => x.ReceivedUtc))
         {
             var previewExpanded = _expandedPreviews.Contains(item.Id);
-            <div class="sender-message-row"><div><strong>@item.Subject</strong><div class="review-meta">@item.ReceivedUtc.ToString("u")</div></div><button class="btn btn-sm btn-outline-secondary" aria-expanded="@previewExpanded" aria-controls="preview-@item.Id" @onclick="() => TogglePreview(item.Id)">@(previewExpanded ? "Hide preview" : "Preview")</button></div>
+            <div class="sender-message-row"><div><strong>@item.Subject</strong><div class="review-meta">@item.ReceivedUtc.ToString("u")</div></div><button class="btn btn-sm btn-outline-secondary" aria-expanded="@(previewExpanded ? "true" : "false")" aria-controls="preview-@item.Id" @onclick="() => TogglePreview(item.Id)">@(previewExpanded ? "Hide preview" : "Preview")</button></div>
             @if (previewExpanded) { <div id="preview-@item.Id"><ReviewMessagePreview Item="item" /></div> }
         }
         </div>
