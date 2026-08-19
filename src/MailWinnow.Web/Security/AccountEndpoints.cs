@@ -10,6 +10,7 @@ public static class AccountEndpoints
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/auth/setup", SetupAsync).AllowAnonymous();
+        endpoints.MapGet("/auth/login", LegacyLoginRedirect).AllowAnonymous();
         endpoints.MapPost("/auth/login", LoginAsync).AllowAnonymous();
         endpoints.MapPost("/auth/logout", LogoutAsync).RequireAuthorization();
 
@@ -20,6 +21,8 @@ public static class AccountEndpoints
         household.MapPost("/password", ResetPasswordAsync);
         return endpoints;
     }
+
+    internal static IResult LegacyLoginRedirect() => Results.LocalRedirect("/login");
 
     private static async Task<IResult> SetupAsync(
         [FromForm] SetupRequest request,

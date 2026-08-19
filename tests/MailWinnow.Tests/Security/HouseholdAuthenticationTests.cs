@@ -7,12 +7,27 @@ using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Http;
 using MailWinnow.Web.Security;
 
 namespace MailWinnow.Tests.Security;
 
 public sealed class HouseholdAuthenticationTests
 {
+    [Fact]
+    public async Task LegacyLoginUrlRedirectsToLoginPage()
+    {
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var context = new DefaultHttpContext();
+        context.RequestServices = services;
+        context.Response.Body = new MemoryStream();
+
+        await AccountEndpoints.LegacyLoginRedirect().ExecuteAsync(context);
+
+        Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
+        Assert.Equal("/login", context.Response.Headers.Location);
+    }
+
     [Fact]
     public void LoginRequestDefaultsRememberMeToFalseWhenCheckboxFieldIsAbsent()
     {
