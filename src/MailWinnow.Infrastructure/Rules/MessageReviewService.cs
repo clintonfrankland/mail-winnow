@@ -9,7 +9,8 @@ namespace MailWinnow.Infrastructure.Rules;
 
 public sealed record MessageReviewFilter(Guid? SourceMailboxId, RuleOutcome? Outcome, string? Search);
 public sealed record MessageReviewItem(Guid Id, string Sender, string Subject, string Account, DateTimeOffset ReceivedUtc,
-    string SourceStatus, RuleOutcome Outcome, string DeliveryStatus, string RuleContext, string RetentionContext, Guid? DeliveryId = null);
+    string SourceStatus, RuleOutcome Outcome, string DeliveryStatus, string RuleContext, string RetentionContext, Guid? DeliveryId = null,
+    Guid SourceMailboxId = default, string FolderName = "", uint Uid = 0, uint UidValidity = 0);
 public sealed record MessageReviewGroup(string Value, int Count, DateTimeOffset MostRecentUtc, IReadOnlyList<Guid> MessageIds,
     IReadOnlyList<string> Senders, IReadOnlyList<string> Samples, IReadOnlyList<string> RuleContexts);
 public sealed record ReviewRule(Guid Id, RuleAction Action, RuleScope Scope, RuleMatchType MatchType, string MatchValue,
@@ -92,6 +93,7 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
         } :
             delivery.State == MessageDeliveryState.Failed ? $"Failed during {delivery.LastFailureStage}; retry available" : delivery.State.ToString();
         return new(header.Id, header.From ?? "(unknown sender)", header.Subject ?? "(no subject)", source.DisplayName, header.ReceivedUtc,
-            $"Source: {source.PollingStatus ?? (source.Enabled ? "enabled" : "disabled")}", evaluation.Outcome, deliveryStatus, ruleContext, retention, delivery?.Id);
+            $"Source: {source.PollingStatus ?? (source.Enabled ? "enabled" : "disabled")}", evaluation.Outcome, deliveryStatus, ruleContext, retention,
+            delivery?.Id, header.SourceMailboxId, header.FolderName, header.Uid, header.UidValidity);
     }
 }

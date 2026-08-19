@@ -13,9 +13,23 @@
 
 @foreach (var group in _senders)
 {
+    var groupExpanded = _expandedGroups.Contains(group.Value);
     <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@group.Value</h2><div class="review-meta"><strong>Subjects:</strong> @string.Join("; ", group.Samples)</div><div class="review-meta review-count">@group.Count @(group.Count == 1 ? "message" : "messages") <span aria-hidden="true">·</span> Newest @group.MostRecentUtc.ToString("u")</div></div></div><div class="decision-actions">
+        <button class="btn btn-outline-secondary" aria-expanded="@groupExpanded" aria-controls="sender-@group.Value.GetHashCode()" @onclick="() => ToggleGroup(group.Value)">@(groupExpanded ? "Hide messages" : "View messages")</button>
         <ReviewDecisionActions Senders="@group.Senders" MessageIds="@group.MessageIds" OnDecision="ApplyDecisionAsync" />
-    </div></article>
+    </div>
+    @if (groupExpanded)
+    {
+        <div id="sender-@group.Value.GetHashCode()" class="sender-message-list">
+        @foreach (var item in _recent.Where(x => group.MessageIds.Contains(x.Id)).OrderByDescending(x => x.ReceivedUtc))
+        {
+            var previewExpanded = _expandedPreviews.Contains(item.Id);
+            <div class="sender-message-row"><div><strong>@item.Subject</strong><div class="review-meta">@item.ReceivedUtc.ToString("u")</div></div><button class="btn btn-sm btn-outline-secondary" aria-expanded="@previewExpanded" aria-controls="preview-@item.Id" @onclick="() => TogglePreview(item.Id)">@(previewExpanded ? "Hide preview" : "Preview")</button></div>
+            @if (previewExpanded) { <div id="preview-@item.Id"><ReviewMessagePreview Item="item" /></div> }
+        }
+        </div>
+    }
+    </article>
 }
 
 <section class="card section-card mt-3"><div class="section-header"><div><h2>Reusable rules</h2><p class="text-body-secondary mb-0">View, create, edit, or remove automatic decisions on the Rules page.</p></div><a class="btn btn-outline-primary" href="/rules">Manage rules</a></div></section>
@@ -25,9 +39,14 @@
     private string? Error { get; set; }
     private string? Saved { get; set; }
     private IReadOnlyList<MessageReviewGroup> _senders = [];
+    private IReadOnlyList<MessageReviewItem> _recent = [];
+    private HashSet<string> _expandedGroups = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<Guid> _expandedPreviews = [];
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; await ReloadAsync(); }
-    private async Task ReloadAsync() { _senders = await ReviewService.GetBySenderAsync(User, new MessageReviewFilter(null, RuleOutcome.Pending, null)); PublishCounts(); }
+    private async Task ReloadAsync() { _recent = await ReviewService.GetRecentAsync(User, new MessageReviewFilter(null, RuleOutcome.Pending, null)); _senders = _recent.GroupBy(x => x.Sender).OrderByDescending(x => x.Count()).ThenByDescending(x => x.Max(y => y.ReceivedUtc)).Select(g => new MessageReviewGroup(g.Key, g.Count(), g.Max(x => x.ReceivedUtc), g.Select(x => x.Id).ToList(), g.Select(x => x.Sender).Distinct(StringComparer.OrdinalIgnoreCase).ToList(), g.OrderByDescending(x => x.ReceivedUtc).Take(3).Select(x => x.Subject).ToList(), g.Select(x => x.RuleContext).Distinct().Take(3).ToList())).ToList(); PublishCounts(); }
+    private void ToggleGroup(string sender) { if (!_expandedGroups.Add(sender)) _expandedGroups.Remove(sender); }
+    private void TogglePreview(Guid id) { if (!_expandedPreviews.Add(id)) _expandedPreviews.Remove(id); }
     private async Task ApplyDecisionAsync(ReviewDecisionRequest decision)
     {
         var queued = await ReviewDecisionPageHelper.QueueAsync(User, decision, DecisionQueue, value => Saved = value, value => Error = value);

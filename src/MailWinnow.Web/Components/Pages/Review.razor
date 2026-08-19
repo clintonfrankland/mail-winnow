@@ -13,9 +13,11 @@
 
 @foreach (var item in _recent)
 {
+    var expanded = _expanded.Contains(item.Id);
     <article class="card review-card mb-2"><div class="review-card-header"><div><h2 class="h5">@item.Subject</h2><div class="review-meta">@item.Sender</div><div class="review-meta">Newest @item.ReceivedUtc.ToString("u")</div></div></div><div class="decision-actions">
+        <button class="btn btn-outline-secondary" aria-expanded="@expanded" aria-controls="preview-@item.Id" @onclick="() => Toggle(item.Id)">@(expanded ? "Hide preview" : "Preview message")</button>
         <ReviewDecisionActions Senders="@(new[] { item.Sender })" MessageIds="@(new[] { item.Id })" OnDecision="ApplyDecisionAsync" />
-    </div></article>
+    </div>@if (expanded) { <div id="preview-@item.Id"><ReviewMessagePreview Item="item" /></div> }</article>
 }
 
 <section class="card section-card mt-3"><div class="section-header"><div><h2>Reusable rules</h2><p class="text-body-secondary mb-0">View, create, edit, or remove automatic decisions on the Rules page.</p></div><a class="btn btn-outline-primary" href="/rules">Manage rules</a></div></section>
@@ -25,9 +27,11 @@
     private string? Error { get; set; }
     private string? Saved { get; set; }
     private IReadOnlyList<MessageReviewItem> _recent = [];
+    private HashSet<Guid> _expanded = [];
     private ClaimsPrincipal User { get; set; } = null!;
     protected override async Task OnInitializedAsync() { User = (await AuthenticationStateTask).User; await ReloadAsync(); }
     private async Task ReloadAsync() { _recent = await ReviewService.GetRecentAsync(User, new MessageReviewFilter(null, RuleOutcome.Pending, null)); PublishCounts(); }
+    private void Toggle(Guid id) { if (!_expanded.Add(id)) _expanded.Remove(id); }
     private async Task ApplyDecisionAsync(ReviewDecisionRequest decision)
     {
         var queued = await ReviewDecisionPageHelper.QueueAsync(User, decision, DecisionQueue, value => Saved = value, value => Error = value);
