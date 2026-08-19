@@ -42,6 +42,20 @@ public sealed class ContainerContractTests
         Assert.DoesNotContain("smtp", compose, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void WebHostTrustsProxySchemeBeforeHttpsAndUsesSecureAuthenticationCookies()
+    {
+        var program = File.ReadAllText(Path.Combine(RepositoryRoot, "src/MailWinnow.Web/Program.cs"));
+
+        Assert.Contains("ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto", program, StringComparison.Ordinal);
+        Assert.Contains("options.KnownIPNetworks.Clear()", program, StringComparison.Ordinal);
+        Assert.Contains("options.KnownProxies.Clear()", program, StringComparison.Ordinal);
+        Assert.Contains("options.Cookie.SecurePolicy = CookieSecurePolicy.Always", program, StringComparison.Ordinal);
+        Assert.True(
+            program.IndexOf("app.UseForwardedHeaders()", StringComparison.Ordinal) <
+            program.IndexOf("app.UseHttpsRedirection()", StringComparison.Ordinal));
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

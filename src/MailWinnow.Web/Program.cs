@@ -3,6 +3,7 @@ using MailWinnow.Web.Components;
 using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Web.Security;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using MailWinnow.Web.Components.Layout;
 
@@ -16,19 +17,32 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<MailWi
 builder.Services.AddHostedService(provider => provider.GetRequiredService<MailWinnow.Infrastructure.Rules.ReviewDecisionQueue>());
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddIdentityCookies();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/login";
     options.AccessDeniedPath = "/access-denied";
     options.Cookie.HttpOnly = true;
     options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
     options.SlidingExpiration = true;
+});
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 });
 builder.Services.AddMailWinnowAuthorization();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<NavigationCountState>();
 
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
