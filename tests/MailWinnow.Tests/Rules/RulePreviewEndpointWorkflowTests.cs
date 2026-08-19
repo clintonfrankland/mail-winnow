@@ -1,8 +1,11 @@
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MailWinnow.Core.Rules;
 using MailWinnow.Infrastructure.Rules;
 using MailWinnow.Infrastructure.Security;
+using MailWinnow.Web.Components;
+using MailWinnow.Web.Components.Layout;
 using MailWinnow.Web.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Antiforgery;
@@ -111,19 +114,22 @@ public sealed class RulePreviewEndpointWorkflowTests
     [Fact]
     public async Task RenderedEditForm_SubmitsToMappedPreviewEndpointWithoutWriting()
     {
-        var page = File.ReadAllText(FindRulesPage());
-        Assert.Contains("action=\"@RulePreviewAction\"", page);
-        Assert.Contains("name=\"ReplaceRuleId\" value=\"@rule.Id\"", page);
-
         var replacedRuleId = Guid.NewGuid();
         var rules = new RecordingRuleManagementService();
         var previews = new RecordingPreviewService(new RuleImpactPreview(1, 0, []));
-        await using var app = CreateMappedApp(rules, previews);
+        await using var app = CreateRenderedApp(rules, previews, replacedRuleId);
         await app.StartAsync();
         using var client = new HttpClient(app.GetTestServer().CreateHandler()) { BaseAddress = new Uri("http://localhost") };
-        var antiforgeryContext = new DefaultHttpContext { RequestServices = app.Services, User = TestPrincipal() };
-        var antiforgeryTokens = app.Services.GetRequiredService<IAntiforgery>().GetAndStoreTokens(antiforgeryContext);
-        var antiforgeryCookie = antiforgeryContext.Response.Headers.SetCookie.SingleOrDefault() ?? throw new InvalidOperationException("Antiforgery cookie was not issued.");
+        var pageResponse = await client.GetAsync("/rules");
+        var page = await pageResponse.Content.ReadAsStringAsync();
+        Assert.Equal(StatusCodes.Status200OK, (int)pageResponse.StatusCode);
+        var editForm = Regex.Match(page, "<form method=\"post\" action=\"(?<action>[^\"]+)\" class=\"form-stack mt-3\">(?<fields>.*?)name=\"ReplaceRuleId\" value=\"(?<replace>[^\"]+)\"", RegexOptions.Singleline);
+        Assert.True(editForm.Success, "The authenticated Rules page did not render an edit form.");
+        Assert.Equal(ReviewEndpoints.RulePreviewPath + "?returnUrl=/rules", editForm.Groups["action"].Value);
+        Assert.Equal(replacedRuleId.ToString(), editForm.Groups["replace"].Value);
+        var antiforgery = Regex.Match(editForm.Groups["fields"].Value, "<input(?=[^>]*name=\"(?<name>__RequestVerificationToken)\")(?=[^>]*value=\"(?<value>[^\"]+)\")[^>]*>");
+        Assert.True(antiforgery.Success, "The rendered edit form did not contain an antiforgery token.");
+        var antiforgeryCookie = pageResponse.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith(".AspNetCore.Antiforgery.", StringComparison.Ordinal));
         client.DefaultRequestHeaders.Add("Cookie", antiforgeryCookie.Split(';')[0]);
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -131,11 +137,11 @@ public sealed class RulePreviewEndpointWorkflowTests
             ["Scope"] = nameof(RuleScope.User),
             ["MatchType"] = nameof(RuleMatchType.ExactSender),
             ["MatchValue"] = "sender@example.test",
-            ["ReplaceRuleId"] = replacedRuleId.ToString(),
-            [antiforgeryTokens.FormFieldName] = antiforgeryTokens.RequestToken!
+            ["ReplaceRuleId"] = editForm.Groups["replace"].Value,
+            [antiforgery.Groups["name"].Value] = antiforgery.Groups["value"].Value
         });
 
-        var response = await client.PostAsync(ReviewEndpoints.RulePreviewPath + "?returnUrl=/rules", content);
+        var response = await client.PostAsync(editForm.Groups["action"].Value, content);
 
         Assert.Equal(StatusCodes.Status302Found, (int)response.StatusCode);
         Assert.StartsWith("/rules?preview=", response.Headers.Location?.OriginalString);
@@ -228,14 +234,33 @@ public sealed class RulePreviewEndpointWorkflowTests
         return app;
     }
 
-    private static string FindRulesPage()
+    private static WebApplication CreateRenderedApp(IRuleManagementService rules, IRuleImpactPreviewService previews, Guid ruleId)
     {
-        for (var current = new DirectoryInfo(AppContext.BaseDirectory); current is not null; current = current.Parent)
-        {
-            var candidate = Path.Combine(current.FullName, "src", "MailWinnow.Web", "Components", "Pages", "Rules.razor");
-            if (File.Exists(candidate)) return candidate;
-        }
-        throw new FileNotFoundException("Rules.razor was not found from the test output directory.");
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+        builder.Services.AddDataProtection();
+        builder.Services.AddAntiforgery();
+        builder.Services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>("test", _ => { });
+        builder.Services.AddAuthorization();
+        builder.Services.AddCascadingAuthenticationState();
+        builder.Services.AddScoped<IMessageReviewService>(_ => new RenderedRulesReviewService(ruleId));
+        builder.Services.AddScoped<IMailboxConfigurationService, RenderedRulesMailboxService>();
+        builder.Services.AddScoped<IInboxReaderService, RenderedRulesInboxReader>();
+        builder.Services.AddScoped<NavigationCountState>();
+        builder.Services.AddSingleton(rules);
+        builder.Services.AddSingleton(previews);
+        builder.Services.AddSingleton<IOwnershipAuthorizer, OwnershipAuthorizer>();
+        builder.Services.AddSingleton<IMessageDeliveryService>(new RecordingDeliveryService());
+        builder.Services.AddSingleton<IReviewDecisionQueue>(new RecordingReviewDecisionQueue());
+
+        var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.UseAntiforgery();
+        app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+        app.MapReviewEndpoints();
+        return app;
     }
 
     private sealed class TestAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
@@ -258,6 +283,32 @@ public sealed class RulePreviewEndpointWorkflowTests
             ReplacedRuleId = replacedRuleId;
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class RenderedRulesReviewService(Guid ruleId) : IMessageReviewService
+    {
+        public Task<IReadOnlyList<MessageReviewItem>> GetRecentAsync(ClaimsPrincipal user, MessageReviewFilter filter, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MessageReviewItem>>([]);
+        public Task<IReadOnlyList<MessageReviewGroup>> GetBySenderAsync(ClaimsPrincipal user, MessageReviewFilter filter, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MessageReviewGroup>>([]);
+        public Task<IReadOnlyList<MessageReviewGroup>> GetBySubjectAsync(ClaimsPrincipal user, MessageReviewFilter filter, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MessageReviewGroup>>([]);
+        public Task<IReadOnlyList<ReviewRule>> GetRulesAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ReviewRule>>([new(ruleId, RuleAction.PermanentlyAllow, RuleScope.User, RuleMatchType.ExactSender, "sender@example.test", null, null, 7, DateTimeOffset.UtcNow)]);
+    }
+
+    private sealed class RenderedRulesMailboxService : IMailboxConfigurationService
+    {
+        public Task<IReadOnlyList<SourceMailboxSummary>> ListSourcesAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<SourceMailboxSummary>>([]);
+        public Task<DestinationMailboxSummary?> GetDestinationAsync(ClaimsPrincipal actor, CancellationToken cancellationToken = default) => Task.FromResult<DestinationMailboxSummary?>(null);
+        public Task<MailboxOperationResult> SaveSourceAsync(ClaimsPrincipal actor, Guid? id, SourceMailboxInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MailboxOperationResult> SaveSourceFoldersAsync(ClaimsPrincipal actor, Guid id, IReadOnlyList<string>? selectedFolders, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MailboxOperationResult> SetSourceEnabledAsync(ClaimsPrincipal actor, Guid id, bool enabled, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MailboxOperationResult> TestSourceAsync(ClaimsPrincipal actor, Guid id, bool discoverFolders, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MailboxOperationResult> SaveDestinationAsync(ClaimsPrincipal actor, DestinationMailboxInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RenderedRulesInboxReader : IInboxReaderService
+    {
+        public Task<InboxLoadResult<int>> CountAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => Task.FromResult(new InboxLoadResult<int>(true, 0));
+        public Task<InboxLoadResult<IReadOnlyList<InboxMessageSummary>>> ListAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<InboxLoadResult<InboxMessageContent>> ReadAsync(ClaimsPrincipal user, uint uid, uint uidValidity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class RecordingRuleManagementService : IRuleManagementService

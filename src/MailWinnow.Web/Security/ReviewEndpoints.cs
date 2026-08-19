@@ -10,13 +10,13 @@ namespace MailWinnow.Web.Security;
 
 public static class ReviewEndpoints
 {
-    public const string RulePreviewPath = "/review/rule";
-    private const string RulePreviewRoute = "/rule";
+    /// <summary>Dedicated form target for creating and previewing reusable rules from the Rules page.</summary>
+    public const string RulePreviewPath = "/rules/preview";
 
     public static IEndpointRouteBuilder MapReviewEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/review").RequireAuthorization();
-        group.MapPost(RulePreviewRoute, AddRuleAsync);
+        endpoints.MapPost(RulePreviewPath, AddRuleAsync).RequireAuthorization();
         group.MapPost("/rule/delete", DeleteRuleAsync);
         group.MapPost("/message/approve", ApproveAsync);
         group.MapPost("/messages/approve", ApproveManyAsync);
