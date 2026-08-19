@@ -4,12 +4,21 @@ using MailWinnow.Core.Rules;
 using MailWinnow.Infrastructure.Rules;
 using MailWinnow.Infrastructure.Security;
 using MailWinnow.Web.Security;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using MailWinnow.Infrastructure.Persistence;
 using MailWinnow.Infrastructure.Mailboxes;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text.Encodings.Web;
 
 namespace MailWinnow.Tests.Rules;
 
@@ -99,6 +108,41 @@ public sealed class RulePreviewEndpointWorkflowTests
         Assert.Equal(1, rules.WriteCount);
     }
 
+    [Fact]
+    public async Task RenderedEditForm_SubmitsToMappedPreviewEndpointWithoutWriting()
+    {
+        var page = File.ReadAllText(FindRulesPage());
+        Assert.Contains("action=\"@RulePreviewAction\"", page);
+        Assert.Contains("name=\"ReplaceRuleId\" value=\"@rule.Id\"", page);
+
+        var replacedRuleId = Guid.NewGuid();
+        var rules = new RecordingRuleManagementService();
+        var previews = new RecordingPreviewService(new RuleImpactPreview(1, 0, []));
+        await using var app = CreateMappedApp(rules, previews);
+        await app.StartAsync();
+        using var client = new HttpClient(app.GetTestServer().CreateHandler()) { BaseAddress = new Uri("http://localhost") };
+        var antiforgeryContext = new DefaultHttpContext { RequestServices = app.Services, User = TestPrincipal() };
+        var antiforgeryTokens = app.Services.GetRequiredService<IAntiforgery>().GetAndStoreTokens(antiforgeryContext);
+        var antiforgeryCookie = antiforgeryContext.Response.Headers.SetCookie.SingleOrDefault() ?? throw new InvalidOperationException("Antiforgery cookie was not issued.");
+        client.DefaultRequestHeaders.Add("Cookie", antiforgeryCookie.Split(';')[0]);
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Action"] = nameof(RuleAction.PermanentlyBlock),
+            ["Scope"] = nameof(RuleScope.User),
+            ["MatchType"] = nameof(RuleMatchType.ExactSender),
+            ["MatchValue"] = "sender@example.test",
+            ["ReplaceRuleId"] = replacedRuleId.ToString(),
+            [antiforgeryTokens.FormFieldName] = antiforgeryTokens.RequestToken!
+        });
+
+        var response = await client.PostAsync(ReviewEndpoints.RulePreviewPath + "?returnUrl=/rules", content);
+
+        Assert.Equal(StatusCodes.Status302Found, (int)response.StatusCode);
+        Assert.StartsWith("/rules?preview=", response.Headers.Location?.OriginalString);
+        Assert.Equal(replacedRuleId, previews.ReplacedRuleId);
+        Assert.Equal(0, rules.WriteCount);
+    }
+
     [Theory]
     [InlineData("tampered")]
     [InlineData("changed-input")]
@@ -143,10 +187,13 @@ public sealed class RulePreviewEndpointWorkflowTests
     private static DefaultHttpContext Context(string owner = Owner)
     {
         var context = new DefaultHttpContext();
-        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "test"));
+        context.User = TestPrincipal(owner);
         context.Request.QueryString = new QueryString("?returnUrl=/rules");
         return context;
     }
+
+    private static ClaimsPrincipal TestPrincipal(string owner = Owner) =>
+        new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner)], "test"));
 
     private static string TokenFrom(IResult result)
     {
@@ -158,6 +205,47 @@ public sealed class RulePreviewEndpointWorkflowTests
     private static string RedirectUrl(IResult result) =>
         (string)(result.GetType().GetProperty("Url")?.GetValue(result)
             ?? throw new InvalidOperationException("Expected a redirect result."));
+
+    private static WebApplication CreateMappedApp(IRuleManagementService rules, IRuleImpactPreviewService previews)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddDataProtection();
+        builder.Services.AddAntiforgery();
+        builder.Services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>("test", _ => { });
+        builder.Services.AddAuthorization();
+        builder.Services.AddSingleton(rules);
+        builder.Services.AddSingleton(previews);
+        builder.Services.AddSingleton<IOwnershipAuthorizer, OwnershipAuthorizer>();
+        builder.Services.AddSingleton<IMessageDeliveryService>(new RecordingDeliveryService());
+        builder.Services.AddSingleton<IReviewDecisionQueue>(new RecordingReviewDecisionQueue());
+
+        var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.UseAntiforgery();
+        app.MapReviewEndpoints();
+        return app;
+    }
+
+    private static string FindRulesPage()
+    {
+        for (var current = new DirectoryInfo(AppContext.BaseDirectory); current is not null; current = current.Parent)
+        {
+            var candidate = Path.Combine(current.FullName, "src", "MailWinnow.Web", "Components", "Pages", "Rules.razor");
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new FileNotFoundException("Rules.razor was not found from the test output directory.");
+    }
+
+    private sealed class TestAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+    {
+        public TestAuthenticationHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
+            : base(options, logger, encoder) { }
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync() => Task.FromResult(
+            AuthenticateResult.Success(new AuthenticationTicket(TestPrincipal(), Scheme.Name)));
+    }
 
     private sealed class RecordingPreviewService(RuleImpactPreview result) : IRuleImpactPreviewService
     {
@@ -195,5 +283,11 @@ public sealed class RulePreviewEndpointWorkflowTests
         public Task<IReadOnlyList<Guid>> GetDueCleanupIdsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task CleanupExpiredAsync(Guid deliveryId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<MailboxOperationResult> RetryAsync(ClaimsPrincipal principal, Guid deliveryId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingReviewDecisionQueue : IReviewDecisionQueue
+    {
+        public Task<ReviewDecisionQueueResult> QueueAsync(ClaimsPrincipal actor, RuleAction action, RuleMatchType matchType, string matchValue, int? retentionDays, IReadOnlyList<Guid> messageIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ReviewDecisionQueueMetrics> GetMetricsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new ReviewDecisionQueueMetrics(0, 0, 0, 0, null));
     }
 }

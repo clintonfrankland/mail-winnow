@@ -3,6 +3,9 @@
 @inject IMessageReviewService ReviewService
 @inject IMailboxConfigurationService Mailboxes
 @inject Microsoft.AspNetCore.DataProtection.IDataProtectionProvider DataProtection
+@{
+    const string RulePreviewAction = ReviewEndpoints.RulePreviewPath + "?returnUrl=/rules";
+}
 
 <PageTitle>Rules</PageTitle>
 <header class="page-heading"><h1>Rules</h1></header>
@@ -16,7 +19,7 @@
         @if (_preview.Impact.Samples.Count == 0) { <p class="text-body-secondary">No pending headers would be affected.</p> }
         else { <ul>@foreach (var sample in _preview.Impact.Samples) { <li><strong>@sample.Sender</strong><br />@sample.Subject</li> }</ul> }
         @if (_preview.Impact.OmittedCount > 0) { <p class="text-body-secondary">@_preview.Impact.OmittedCount additional affected header@(_preview.Impact.OmittedCount == 1 ? " is" : "s are") omitted.</p> }
-        <form method="post" action="/review/rule?returnUrl=/rules">
+        <form method="post" action="@RulePreviewAction">
             <AntiforgeryToken />@PreviewFields(_preview)
             <input type="hidden" name="Confirm" value="true" /><input type="hidden" name="PreviewToken" value="@Preview" />
             <button class="btn btn-primary" type="submit">Confirm and save rule</button> <a class="btn btn-outline-secondary" href="/rules">Edit inputs</a>
@@ -26,7 +29,7 @@
 
 <details class="card section-card mb-3">
     <summary class="btn btn-primary">Create rule</summary>
-    <form method="post" action="/review/rule?returnUrl=/rules" class="form-stack mt-3">
+    <form method="post" action="@RulePreviewAction" class="form-stack mt-3">
         <AntiforgeryToken />
         <label for="new-match-type">Match</label>
         <select id="new-match-type" class="form-select" name="MatchType"><option value="ExactSender">Exact sender address</option><option value="SenderDomain">Sender domain</option><option value="NormalizedExactSubject">Exact subject</option><option value="SubjectContains">Subject contains</option></select>
@@ -48,7 +51,7 @@
         <div class="review-card-header"><div><strong>@ActionLabel(rule.Action)</strong><div class="review-meta">@MatchLabel(rule.MatchType) · @rule.MatchValue</div></div><span class="pill">@(rule.ExpiresUtc?.ToString("u") ?? "Permanent")</span></div>
         <p class="small text-body-secondary">Destination retention: @RetentionLabel(rule.RetentionDays) · Created @rule.CreatedUtc.ToString("u")</p>
         <details><summary class="btn btn-sm btn-outline-secondary">Edit rule</summary>
-            <form method="post" action="/review/rule?returnUrl=/rules" class="form-stack mt-3">
+            <form method="post" action="@RulePreviewAction" class="form-stack mt-3">
                 <AntiforgeryToken /><input type="hidden" name="ReplaceRuleId" value="@rule.Id" />
                 <label for="match-type-@rule.Id">Match</label><select id="match-type-@rule.Id" class="form-select" name="MatchType">@foreach (var type in Enum.GetValues<RuleMatchType>()) { <option value="@type" selected="@(rule.MatchType == type)">@MatchLabel(type)</option> }</select>
                 <label for="match-value-@rule.Id">Value</label><input id="match-value-@rule.Id" class="form-control" name="MatchValue" value="@rule.MatchValue" required />
