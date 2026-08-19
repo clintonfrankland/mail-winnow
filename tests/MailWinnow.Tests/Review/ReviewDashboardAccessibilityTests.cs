@@ -249,6 +249,33 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("@media (max-width: 520px)", mailboxStyles);
     }
 
+    [Fact]
+    public void ReviewPreviewsAreOnDemandAccessibleAndKeepSenderRowStylesInParentScope()
+    {
+        var recent = File.ReadAllText(FindReviewPage());
+        var sender = File.ReadAllText(FindPage("ReviewBySender.razor"));
+        var preview = File.ReadAllText(FindPage("ReviewMessagePreview.razor"));
+        var senderStyles = File.ReadAllText(FindPage("ReviewBySender.razor.css"));
+        var previewStyles = File.ReadAllText(FindPage("ReviewMessagePreview.razor.css"));
+
+        Assert.Contains("aria-expanded=\"@expanded\"", recent);
+        Assert.Contains("aria-expanded=\"@groupExpanded\"", sender);
+        Assert.Contains("aria-expanded=\"@previewExpanded\"", sender);
+        Assert.Contains("@if (expanded) { <div id=\"preview-@item.Id\"><ReviewMessagePreview", recent);
+        Assert.Contains("@if (previewExpanded) { <div id=\"preview-@item.Id\"><ReviewMessagePreview", sender);
+        Assert.Contains("OrderByDescending(x => x.ReceivedUtc)", sender);
+        Assert.Contains("Loading message preview", preview);
+        Assert.Contains("sandbox=\"allow-popups\"", preview);
+        Assert.Contains("referrerpolicy=\"no-referrer\"", preview);
+        Assert.DoesNotContain("Show images", recent, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Show images", sender, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Show images", preview, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(".sender-message-list", senderStyles);
+        Assert.Contains(".sender-message-row", senderStyles);
+        Assert.Contains("@media(max-width:520px)", senderStyles);
+        Assert.DoesNotContain(".sender-message-row", previewStyles);
+    }
+
     private static string FindReviewPage() => FindPage("Review.razor");
 
     private static string FindPage(string relativePath)

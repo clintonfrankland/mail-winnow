@@ -54,7 +54,8 @@ public sealed partial class ReviewMessagePreviewService(MailWinnowDbContext db, 
         }
     }
 
-    private static string PlainTextHtml(string text) => $"<div style=\"white-space:pre-wrap\">{WebUtility.HtmlEncode(text)}</div>";
+    // Use a semantic preformatted element because the sanitizer intentionally removes inline styles.
+    private static string PlainTextHtml(string text) => $"<pre>{WebUtility.HtmlEncode(text)}</pre>";
     private static string Sanitize(string html)
     {
         var sanitizer = new HtmlSanitizer(); sanitizer.AllowedSchemes.Add("data"); sanitizer.AllowedAttributes.Add("class"); sanitizer.AllowedAttributes.Add("id");

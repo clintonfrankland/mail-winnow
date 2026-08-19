@@ -1,0 +1,1 @@
+.sender-message-list{display:grid;gap:.75rem;margin-top:1rem}.sender-message-row{display:flex;gap:.75rem;align-items:center;justify-content:space-between;padding:.75rem;border:1px solid var(--line);border-radius:8px;min-width:0}.sender-message-row strong{overflow-wrap:anywhere}@media(max-width:520px){.sender-message-row{align-items:stretch;flex-direction:column}}
