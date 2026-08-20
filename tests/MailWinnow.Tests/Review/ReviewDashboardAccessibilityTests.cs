@@ -148,7 +148,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("> Mailboxes</NavLink>", navigation);
         Assert.Contains("> Sign out</button>", navigation);
         Assert.Contains("OnAfterRenderAsync(bool firstRender)", navigation);
-        Assert.Contains("NavigationCountLoader.Start(() => LoadInboxCountAsync(user), () => LoadReviewCountsAsync(user))", navigation);
+        Assert.Contains("await NavigationCountLoader.RunAsync(", navigation);
+        Assert.Contains("CountRefreshInterval", navigation);
+        Assert.Contains("_refreshCancellation.Token", navigation);
         Assert.DoesNotContain("override async Task OnInitializedAsync()", navigation);
     }
 

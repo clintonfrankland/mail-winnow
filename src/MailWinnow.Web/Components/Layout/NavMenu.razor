@@ -4,7 +4,7 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject NavigationCountState CountState
 @inject ILogger<NavMenu> Logger
-@implements IDisposable
+@implements IAsyncDisposable
 
 <div class="brand-row"><a class="brand" href="" aria-label="Mail Winnow home"><img class="brand-mark brand-mark-plain" src="mail-winnow-mark-bordered.png" alt="" /><span><strong>Mail Winnow</strong><small>Mail worth keeping</small></span></a></div>
 <input type="checkbox" title="Navigation menu" class="navbar-toggler" aria-label="Toggle navigation" />
@@ -26,6 +26,9 @@
 </div>
 
 @code {
+    private static readonly TimeSpan CountRefreshInterval = TimeSpan.FromSeconds(15);
+    private readonly CancellationTokenSource _refreshCancellation = new();
+    private Task? _refreshTask;
     private static string AppVersion => typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
 
     protected override void OnInitialized()
@@ -37,7 +40,7 @@
     {
         if (firstRender)
         {
-            _ = LoadCountsAsync();
+            _refreshTask = LoadCountsAsync();
         }
 
         return Task.CompletedTask;
@@ -51,21 +54,29 @@
             return;
         }
 
-        NavigationCountLoader.Start(() => LoadInboxCountAsync(user), () => LoadReviewCountsAsync(user));
+        await NavigationCountLoader.RunAsync(
+            token => LoadInboxCountAsync(user, token),
+            token => LoadReviewCountsAsync(user, token),
+            CountRefreshInterval,
+            _refreshCancellation.Token);
     }
 
-    private async Task LoadInboxCountAsync(ClaimsPrincipal user)
+    private async Task LoadInboxCountAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         try
         {
             await using (var inboxScope = ScopeFactory.CreateAsyncScope())
             {
-                var inbox = await inboxScope.ServiceProvider.GetRequiredService<IInboxReaderService>().CountAsync(user);
+                var inbox = await inboxScope.ServiceProvider.GetRequiredService<IInboxReaderService>()
+                    .CountAsync(user, cancellationToken);
                 if (inbox.Succeeded)
                 {
                     CountState.SetInboxCount(inbox.Value);
                 }
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
@@ -73,15 +84,18 @@
         }
     }
 
-    private async Task LoadReviewCountsAsync(ClaimsPrincipal user)
+    private async Task LoadReviewCountsAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         try
         {
             await using var reviewScope = ScopeFactory.CreateAsyncScope();
             var messages = await reviewScope.ServiceProvider.GetRequiredService<IMessageReviewService>()
-                .GetRecentAsync(user, new MessageReviewFilter(null, RuleOutcome.Pending, null));
+                .GetRecentAsync(user, new MessageReviewFilter(null, RuleOutcome.Pending, null), cancellationToken);
             CountState.SetReviewCounts(messages.Count,
                 messages.Select(message => message.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
@@ -91,5 +105,16 @@
 
     private void OnCountsChanged() => _ = InvokeAsync(StateHasChanged);
 
-    public void Dispose() => CountState.Changed -= OnCountsChanged;
+    public async ValueTask DisposeAsync()
+    {
+        CountState.Changed -= OnCountsChanged;
+        await _refreshCancellation.CancelAsync();
+
+        if (_refreshTask is not null)
+        {
+            await _refreshTask;
+        }
+
+        _refreshCancellation.Dispose();
+    }
 }

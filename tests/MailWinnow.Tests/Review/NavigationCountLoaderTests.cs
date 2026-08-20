@@ -5,64 +5,110 @@ namespace MailWinnow.Tests.Review;
 public sealed class NavigationCountLoaderTests
 {
     [Fact]
-    public async Task DelayedLoadersStartTogetherAndUpdateIndependently()
+    public async Task OpenSessionReflectsWorkerStyleIncreasesAndDecreaseToZero()
     {
         var state = new NavigationCountState();
-        var inboxCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var reviewCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var inboxStarted = false;
-        var reviewStarted = false;
+        var inboxValues = new Queue<int>([2, 5, 0]);
+        var reviewValues = new Queue<(int Messages, int Senders)>([(3, 2), (7, 4), (0, 0)]);
+        using var cancellation = new CancellationTokenSource();
+        var waits = 0;
 
-        NavigationCountLoader.Start(async () =>
-        {
-            inboxStarted = true;
-            await inboxCompletion.Task;
-            state.SetInboxCount(7);
-        }, async () =>
-        {
-            reviewStarted = true;
-            await reviewCompletion.Task;
-            state.SetReviewCounts(11, 3);
-        });
+        await NavigationCountLoader.RunAsync(
+            _ =>
+            {
+                state.SetInboxCount(inboxValues.Dequeue());
+                return Task.CompletedTask;
+            },
+            _ =>
+            {
+                var value = reviewValues.Dequeue();
+                state.SetReviewCounts(value.Messages, value.Senders);
+                return Task.CompletedTask;
+            },
+            _ =>
+            {
+                if (++waits == 3)
+                {
+                    cancellation.Cancel();
+                }
 
-        Assert.True(inboxStarted);
-        Assert.True(reviewStarted);
+                return Task.CompletedTask;
+            },
+            cancellation.Token);
 
-        reviewCompletion.SetResult();
-        await WaitForAsync(() => state.ReviewMessageCount == 11);
         Assert.Equal(0, state.InboxCount);
-        Assert.Equal(3, state.ReviewSenderCount);
-
-        inboxCompletion.SetResult();
-        await WaitForAsync(() => state.InboxCount == 7);
+        Assert.Equal(0, state.ReviewMessageCount);
+        Assert.Equal(0, state.ReviewSenderCount);
+        Assert.Equal(3, waits);
     }
 
     [Fact]
-    public async Task FailedLoaderDoesNotPreventOtherLoaderFromUpdating()
+    public async Task TransientFailurePreservesCountsAndLaterRefreshRecovers()
     {
         var state = new NavigationCountState();
-        var reviewCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        state.SetInboxCount(4);
+        var attempts = 0;
+        using var cancellation = new CancellationTokenSource();
 
-        NavigationCountLoader.Start(() => Task.FromException(new InvalidOperationException("unavailable")), async () =>
-        {
-            await reviewCompletion.Task;
-            state.SetReviewCounts(5, 2);
-        });
+        await NavigationCountLoader.RunAsync(
+            _ =>
+            {
+                if (++attempts == 1)
+                {
+                    throw new InvalidOperationException("temporarily unavailable");
+                }
 
-        reviewCompletion.SetResult();
-        await WaitForAsync(() => state.ReviewMessageCount == 5);
+                state.SetInboxCount(8);
+                return Task.CompletedTask;
+            },
+            _ => Task.CompletedTask,
+            _ =>
+            {
+                if (attempts == 2)
+                {
+                    cancellation.Cancel();
+                }
 
-        Assert.Equal(0, state.InboxCount);
-        Assert.Equal(2, state.ReviewSenderCount);
+                return Task.CompletedTask;
+            },
+            cancellation.Token);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(8, state.InboxCount);
     }
 
-    private static async Task WaitForAsync(Func<bool> condition)
+    [Fact]
+    public async Task RefreshCallbacksRemainBoundToAuthenticatedSessionUser()
     {
-        for (var attempt = 0; attempt < 100 && !condition(); attempt++)
-        {
-            await Task.Delay(1);
-        }
+        const string sessionUser = "household-one";
+        var observedUsers = new List<string>();
+        using var cancellation = new CancellationTokenSource();
+        var cycles = 0;
 
-        Assert.True(condition());
+        await NavigationCountLoader.RunAsync(
+            _ =>
+            {
+                observedUsers.Add(sessionUser);
+                return Task.CompletedTask;
+            },
+            _ =>
+            {
+                observedUsers.Add(sessionUser);
+                return Task.CompletedTask;
+            },
+            _ =>
+            {
+                if (++cycles == 2)
+                {
+                    cancellation.Cancel();
+                }
+
+                return Task.CompletedTask;
+            },
+            cancellation.Token);
+
+        Assert.Equal(4, observedUsers.Count);
+        Assert.All(observedUsers, user => Assert.Equal(sessionUser, user));
+        Assert.DoesNotContain("household-two", observedUsers);
     }
 }
