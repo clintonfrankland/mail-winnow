@@ -64,6 +64,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAdministrationService, AdministrationService>();
         services.AddScoped<IAuditRecorder>(provider => provider.GetRequiredService<IAdministrationService>());
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
+        services.AddSingleton<IInboxRefreshService, InboxRefreshService>();
+        services.AddSingleton<MailSyncWakeSignal>();
         return services;
     }
 }

@@ -4,7 +4,7 @@ using MailWinnow.Infrastructure.Mailboxes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSyncQueue queue, IOptions<MailSyncOptions> options) : BackgroundService
+public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSyncQueue queue, IOptions<MailSyncOptions> options, MailSyncWakeSignal wakeSignal) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -97,7 +97,7 @@ public class Worker(ILogger<Worker> logger, IServiceScopeFactory scopes, IMailSy
                 logger.LogError(exception, "Mail synchronization worker cycle failed.");
             }
             var interval = TimeSpan.FromSeconds(Math.Clamp(options.Value.PollingIntervalSeconds, 15, 86400));
-            await Task.Delay(interval, stoppingToken);
+            await wakeSignal.WaitAsync(interval, stoppingToken);
         }
     }
 }

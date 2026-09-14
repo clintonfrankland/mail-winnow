@@ -49,6 +49,7 @@ Generated migration designers and model snapshot accompany the named migrations;
 | [`src/MailWinnow.Infrastructure/Mailboxes/BlockedMessageDeletionService.cs`](../src/MailWinnow.Infrastructure/Mailboxes/BlockedMessageDeletionService.cs) | Durably moves blocked messages from the source mailbox into the destination Blocked folder. |
 | [`src/MailWinnow.Infrastructure/Mailboxes/ImapConnectionService.cs`](../src/MailWinnow.Infrastructure/Mailboxes/ImapConnectionService.cs) | Application-owned IMAP contract. Synchronization callers never need to depend on MailKit types. |
 | [`src/MailWinnow.Infrastructure/Mailboxes/InboxDeletionQueue.cs`](../src/MailWinnow.Infrastructure/Mailboxes/InboxDeletionQueue.cs) | Inbox Deletion Queue |
+| [`src/MailWinnow.Infrastructure/Mailboxes/InboxRefreshService.cs`](../src/MailWinnow.Infrastructure/Mailboxes/InboxRefreshService.cs) | Owner-scoped durable source refresh, lightweight progress projections and worker wake signal. |
 | [`src/MailWinnow.Infrastructure/Mailboxes/InboxReaderService.cs`](../src/MailWinnow.Infrastructure/Mailboxes/InboxReaderService.cs) | Inbox Reader Service |
 | [`src/MailWinnow.Infrastructure/Mailboxes/LocalImapHealthChecker.cs`](../src/MailWinnow.Infrastructure/Mailboxes/LocalImapHealthChecker.cs) | Performs a bounded TCP probe without using or exposing a mailbox credential. |
 | [`src/MailWinnow.Infrastructure/Mailboxes/LocalImapOptions.cs`](../src/MailWinnow.Infrastructure/Mailboxes/LocalImapOptions.cs) | Local Imap Options |
@@ -109,6 +110,7 @@ Generated migration designers and model snapshot accompany the named migrations;
 | [`src/MailWinnow.Web/Components/Pages/Home.razor`](../src/MailWinnow.Web/Components/Pages/Home.razor) | Home |
 | [`src/MailWinnow.Web/Components/Pages/Household.razor`](../src/MailWinnow.Web/Components/Pages/Household.razor) | Household |
 | [`src/MailWinnow.Web/Components/Pages/Inbox.razor`](../src/MailWinnow.Web/Components/Pages/Inbox.razor) | Inbox |
+| [`src/MailWinnow.Web/Components/Pages/Inbox.razor.cs`](../src/MailWinnow.Web/Components/Pages/Inbox.razor.cs) | Background refresh observation, fresh scoped IMAP reads, cancellation and stale-result protection. |
 | [`src/MailWinnow.Web/Components/Pages/Inbox.razor.css`](../src/MailWinnow.Web/Components/Pages/Inbox.razor.css) | Inbox |
 | [`src/MailWinnow.Web/Components/Pages/Login.razor`](../src/MailWinnow.Web/Components/Pages/Login.razor) | Login |
 | [`src/MailWinnow.Web/Components/Pages/Mailboxes.razor`](../src/MailWinnow.Web/Components/Pages/Mailboxes.razor) | Mailboxes |

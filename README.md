@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.15.0.119**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.16.0.120**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -23,6 +23,14 @@ flowchart LR
 Sender allow/block commits a durable command, removes the local message rows, then processes the work in **Worker only**. The sidebar reads SQL count projections, not the full mailbox or live IMAP. Each durable command owns one replay-safe evaluation pass with indexed matching, 200-header tracked-state bounds, and renewable owned leases. Destination counts are worker-maintained snapshots; they refresh after a 60-second worker interval plus pass time and the sidebar's 15-second poll. Last successful counts survive IMAP failures.
 
 See [queue performance, freshness, restart behavior, migration, and verification](docs/review-queue-performance.md). Deployment must stop old Web/Worker consumers before activating the new lease-aware worker. The migration adds only nullable destination-count fields; accepted commands and existing mail remain intact.
+
+## Inbox Refresh
+
+**Refresh** now requests new mail from all of the signed-in user's enabled source accounts. The button waits only for the durable SQL request, not source IMAP. The Worker checks for requested syncs every two seconds while idle, then uses existing account locks, incremental synchronization, rule evaluation and delivery. If already busy, it handles the request on a subsequent cycle; two seconds is an idle discovery bound, not a mail-delivery guarantee. Normal scheduled polling remains configured by `MailSync__PollingIntervalSeconds`.
+
+The page stays usable for reading, showing images and deleting while sources sync. A plain-language status explains waiting, checking accounts, processing deliveries, success or failure. Lightweight owner-scoped SQL progress checks occur every three seconds for up to five minutes while the page remains open. Local IMAP headers reload initially, when delivery/cleanup progress changes, and at completion—not on every status check. Leaving the page cancels observation only; accepted work remains durable. After five minutes the page says work is still running rather than falsely reporting completion. If no enabled source accounts exist, Refresh still reloads the local inbox.
+
+Each source pass keeps the existing configured header batch limit (default 100 new messages per selected folder). A completed check is not a guarantee that an arbitrarily large source backlog has drained; remaining headers are handled by later scheduled passes. Approved mail appears in Inbox; mail needing a decision remains in Review, and blocked mail follows the existing Blocked workflow. Refresh does not bypass rules or reset retention deadlines. Removed messages are cleared from the reading pane, and late refresh results cannot reintroduce a message optimistically deleted in that page. Each local list/body read has its own service scope and timeout; source sync never executes in the browser's request/circuit. This feature uses existing source-request fields and adds no database migration.
 
 ## Solution layout
 
@@ -188,6 +196,11 @@ The EF model and migration history are authoritative for exact names and fields.
 flowchart TD
     SignIn[Sign in] --> Mailboxes[Manage owned source and destination mailboxes]
     SignIn --> Inbox[Read delivered inbox]
+    Inbox --> Refresh[Refresh: durably request owned source checks]
+    Refresh --> Continue[Keep reading and deleting]
+    Refresh --> Background[Worker syncs sources and applies existing rules]
+    Background --> Inbox
+    Background --> Review
     Inbox --> Read[Read message / choose remote images]
     Read --> Trash[Delete to destination Trash]
     SignIn --> Review[Review pending messages / sender or subject groups]

@@ -76,10 +76,12 @@ public sealed class SourceMailboxSynchronizer(
         await using var accountLock = await locks.TryAcquireAsync(db, source.Id, cancellationToken);
         if (accountLock is null) return; // a different worker owns this account; its work is sufficient.
 
-        source.LastSyncAttemptUtc = DateTimeOffset.UtcNow;
-        source.SyncRequestedUtc = null;
-        source.PollingStatus = "Synchronizing";
-        await db.SaveChangesAsync(cancellationToken);
+        // Consume the marker atomically at the start, under the existing account lock. A request
+        // accepted after this UPDATE must survive completion, even if this context loaded an older row.
+        var startedUtc = DateTimeOffset.UtcNow;
+        var claimed = await ClaimRequestAsync(db, source.Id, startedUtc, cancellationToken);
+        if (claimed == 0) return;
+        await db.Entry(source).ReloadAsync(cancellationToken);
         try
         {
             var connection = new ImapConnectionSettings(source.Host, source.Port, source.UseSsl, source.Username,
@@ -100,6 +102,26 @@ public sealed class SourceMailboxSynchronizer(
             source.SanitizedError = "Mailbox synchronization could not be completed.";
             await db.SaveChangesAsync(CancellationToken.None);
         }
+    }
+
+    internal static Task<int> ClaimRequestAsync(MailWinnowDbContext db, Guid sourceMailboxId,
+        DateTimeOffset startedUtc, CancellationToken cancellationToken = default)
+    {
+        // The attempt must cover the exact marker consumed by this statement, including a refresh
+        // accepted between sampling startedUtc and executing the UPDATE. Later markers remain untouched.
+        if (db.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+            return db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE SourceMailboxes SET LastSyncAttemptUtc = CASE
+                    WHEN julianday(SyncRequestedUtc) > julianday({startedUtc}) THEN SyncRequestedUtc ELSE {startedUtc} END,
+                    SyncRequestedUtc = NULL, PollingStatus = 'Synchronizing'
+                WHERE Id = {sourceMailboxId} AND Enabled = 1
+                """, cancellationToken);
+        return db.SourceMailboxes.Where(mailbox => mailbox.Id == sourceMailboxId && mailbox.Enabled)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(mailbox => mailbox.LastSyncAttemptUtc,
+                    mailbox => mailbox.SyncRequestedUtc > startedUtc ? mailbox.SyncRequestedUtc : startedUtc)
+                .SetProperty(mailbox => mailbox.SyncRequestedUtc, (DateTimeOffset?)null)
+                .SetProperty(mailbox => mailbox.PollingStatus, "Synchronizing"), cancellationToken);
     }
 
     private async Task<int> SynchronizeFolderAsync(SourceMailbox source, ImapConnectionSettings connection, string folder, CancellationToken cancellationToken)

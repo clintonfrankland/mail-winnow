@@ -186,6 +186,7 @@ public sealed class ReviewDashboardAccessibilityTests
     public void InboxProvidesThreePaneReaderAndBlocksImagesByDefault()
     {
         var source = File.ReadAllText(FindPage("Inbox.razor"));
+        source += File.ReadAllText(FindPage("Inbox.razor.cs"));
         var navigation = File.ReadAllText(FindPage(Path.Combine("..", "Layout", "NavMenu.razor")));
 
         Assert.DoesNotContain("class=\"inbox-folders\"", source);

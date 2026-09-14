@@ -5,6 +5,8 @@ using MailWinnow.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
+using System.Security.Claims;
 
 namespace MailWinnow.Tests.Mailboxes;
 
@@ -72,6 +74,34 @@ public sealed class HeaderSynchronizationTests
         Assert.Single(await healthy.Db.SourceMessageHeaders.ToListAsync());
     }
 
+    [Fact]
+    public async Task Refresh_requested_during_source_imap_work_survives_completion_for_the_next_pass()
+    {
+        await using var fixture = await SyncFixture.CreateAsync();
+        await using var provider = new ServiceCollection()
+            .AddDbContext<MailWinnowDbContext>(options => options.UseSqlite(fixture.Db.Database.GetDbConnection()))
+            .AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>().BuildServiceProvider();
+        var service = new InboxRefreshService(provider.GetRequiredService<IServiceScopeFactory>());
+        var actor = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "owner")], "test"));
+        InboxRefreshRequest? request = null;
+        fixture.Imap.OnSnapshot = async () =>
+        {
+            fixture.Imap.OnSnapshot = null;
+            request = await service.RequestAsync(actor);
+        };
+        await fixture.SynchronizeAsync();
+        fixture.Db.ChangeTracker.Clear();
+        var source = await fixture.Db.SourceMailboxes.SingleAsync();
+        Assert.NotNull(request);
+        Assert.Equal(request.RequestedUtc, source.SyncRequestedUtc);
+        Assert.Equal("Synchronized", source.PollingStatus);
+        Assert.Equal(1, (await service.GetStatusAsync(actor, request.RequestedUtc)).WaitingSources);
+        await fixture.SynchronizeAsync();
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Null((await fixture.Db.SourceMailboxes.SingleAsync()).SyncRequestedUtc);
+        Assert.True((await service.GetStatusAsync(actor, request.RequestedUtc)).IsComplete);
+    }
+
     private static ImapMessageHeader Header(uint uid) => new(uid, $"<{uid}@test>", null, "from@test", null, null, "to@test", null, "subject", null);
 
     private sealed class SyncFixture : IAsyncDisposable
@@ -127,10 +157,12 @@ public sealed class HeaderSynchronizationTests
         public IReadOnlyList<ImapMessageHeader> Headers { get; set; } = [];
         public int FetchCalls { get; private set; }
         public bool FailNextSnapshot { get; set; }
-        public Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default)
+        public Func<Task>? OnSnapshot { get; set; }
+        public async Task<ImapOperationResult<ImapFolderSnapshot>> GetFolderSnapshotAsync(ImapConnectionSettings connection, string folderName, CancellationToken cancellationToken = default)
         {
-            if (FailNextSnapshot) { FailNextSnapshot = false; return Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Failure(ImapFailureKind.Transient, "test")); }
-            return Task.FromResult(ImapOperationResult<ImapFolderSnapshot>.Success(Snapshot));
+            if (OnSnapshot is not null) await OnSnapshot();
+            if (FailNextSnapshot) { FailNextSnapshot = false; return ImapOperationResult<ImapFolderSnapshot>.Failure(ImapFailureKind.Transient, "test"); }
+            return ImapOperationResult<ImapFolderSnapshot>.Success(Snapshot);
         }
         public Task<ImapOperationResult<IReadOnlyList<ImapMessageHeader>>> FetchHeadersAsync(ImapConnectionSettings connection, string folderName, IReadOnlyList<uint> uids, uint? expectedUidValidity = null, CancellationToken cancellationToken = default)
         { FetchCalls++; return Task.FromResult(ImapOperationResult<IReadOnlyList<ImapMessageHeader>>.Success(Headers)); }
