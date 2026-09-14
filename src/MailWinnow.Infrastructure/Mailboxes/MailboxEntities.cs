@@ -59,6 +59,10 @@ public sealed class SourceMessageHeader
 
 public sealed class DestinationMailbox
 {
+    /// <summary>Last successful worker-observed folder count. Null until first observation.</summary>
+    public int? InboxMessageCount { get; set; }
+    public DateTimeOffset? InboxCountObservedUtc { get; set; }
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public required string OwnerUserId { get; set; }
     public required string Username { get; set; }

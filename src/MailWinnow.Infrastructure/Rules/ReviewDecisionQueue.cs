@@ -67,44 +67,74 @@ public sealed class ReviewDecisionQueue(IServiceScopeFactory scopes, ILogger<Rev
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
         var items = db.ReviewDecisionWorkItems.AsNoTracking();
-        // SQLite cannot aggregate or sort DateTimeOffset.  The operational queue is bounded by
-        // pending/retrying commands, so calculate this presentation-only metric client-side.
-        var oldestPendingUtc = (await items.Where(x => x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Retrying)
-            .Select(x => x.CreatedUtc).ToListAsync(cancellationToken)).DefaultIfEmpty().Min();
+        var pending = items.Where(x => x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Retrying);
+        var oldestPendingUtc = db.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite"
+            ? await db.ReviewDecisionWorkItems.FromSqlInterpolated($"SELECT * FROM ReviewDecisionWorkItems WHERE Status IN ({ReviewDecisionWorkStatus.Pending.ToString()}, {ReviewDecisionWorkStatus.Retrying.ToString()}) ORDER BY julianday(CreatedUtc) LIMIT 1")
+                .AsNoTracking().Select(x => (DateTimeOffset?)x.CreatedUtc).SingleOrDefaultAsync(cancellationToken)
+            : await pending.OrderBy(x => x.CreatedUtc).Select(x => (DateTimeOffset?)x.CreatedUtc).FirstOrDefaultAsync(cancellationToken);
         return new(await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Pending, cancellationToken),
             await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Processing, cancellationToken),
             await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Retrying, cancellationToken),
             await items.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Failed, cancellationToken),
-            oldestPendingUtc == default ? null : oldestPendingUtc);
+            oldestPendingUtc);
     }
+
+    private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan RenewalInterval = TimeSpan.FromSeconds(20);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var idleDelay = TimeSpan.FromMilliseconds(250);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var didWork = await ProcessBatchAsync(stoppingToken);
-                if (!didWork) await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                if (await ProcessBatchAsync(stoppingToken))
+                {
+                    idleDelay = TimeSpan.FromMilliseconds(250);
+                    continue;
+                }
+                await Task.Delay(idleDelay, stoppingToken);
+                idleDelay = TimeSpan.FromMilliseconds(Math.Min(idleDelay.TotalMilliseconds * 2, 2000));
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-            catch (Exception ex) { logger.LogError(ex, "Review decision worker loop failed"); await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Review decision worker loop failed");
+                try { await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            }
         }
     }
 
     private async Task<bool> ProcessBatchAsync(CancellationToken cancellationToken)
     {
-        await using var selectionScope = scopes.CreateAsyncScope();
-        var selectionDb = selectionScope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
-        var now = DateTimeOffset.UtcNow;
-        // A killed container can leave a leased row behind. Releasing only stale leases prevents concurrent workers from duplicating active work.
-        var stale = (await selectionDb.ReviewDecisionWorkItems.Where(x => x.Status == ReviewDecisionWorkStatus.Processing).ToListAsync(cancellationToken))
-            .Where(x => x.StartedUtc < now.AddMinutes(-2)).ToList();
-        foreach (var item in stale) { item.Status = ReviewDecisionWorkStatus.Retrying; item.NextAttemptUtc = now; item.StartedUtc = null; }
-        if (stale.Count > 0) await selectionDb.SaveChangesAsync(cancellationToken);
-        var ids = (await selectionDb.ReviewDecisionWorkItems.AsNoTracking().Where(x =>
-                x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Retrying).ToListAsync(cancellationToken))
-            .Where(x => x.NextAttemptUtc <= now).OrderBy(x => x.CreatedUtc).Take(16).Select(x => x.Id).ToList();
+        List<Guid> ids;
+        await using (var selectionScope = scopes.CreateAsyncScope())
+        {
+            var database = selectionScope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+            var now = DateTimeOffset.UtcNow;
+            var staleBefore = now - LeaseDuration;
+            // NextAttemptUtc is the renewable expiry while Processing. StartedUtc remains the
+            // original start time; the extra start bound also supports rows from the old processor.
+            var staleQuery = database.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite"
+                ? database.ReviewDecisionWorkItems.FromSqlInterpolated($"SELECT * FROM ReviewDecisionWorkItems WHERE Status = {ReviewDecisionWorkStatus.Processing.ToString()} AND julianday(StartedUtc) < julianday({staleBefore}) AND julianday(NextAttemptUtc) <= julianday({now}) ORDER BY julianday(NextAttemptUtc) LIMIT 16")
+                : database.ReviewDecisionWorkItems.Where(x => x.Status == ReviewDecisionWorkStatus.Processing && x.StartedUtc < staleBefore && x.NextAttemptUtc <= now)
+                    .OrderBy(x => x.NextAttemptUtc).Take(16);
+            foreach (var expired in await staleQuery.AsNoTracking().ToListAsync(cancellationToken))
+            {
+                // A heartbeat or another recovery between selection and update invalidates this CAS.
+                await database.ReviewDecisionWorkItems.Where(x => x.Id == expired.Id && x.Status == ReviewDecisionWorkStatus.Processing &&
+                        x.AttemptCount == expired.AttemptCount && x.NextAttemptUtc == expired.NextAttemptUtc)
+                    .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ReviewDecisionWorkStatus.Retrying)
+                        .SetProperty(x => x.NextAttemptUtc, now).SetProperty(x => x.StartedUtc, (DateTimeOffset?)null), cancellationToken);
+            }
+            var eligible = database.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite"
+                ? database.ReviewDecisionWorkItems.FromSqlInterpolated($"SELECT * FROM ReviewDecisionWorkItems WHERE Status IN ({ReviewDecisionWorkStatus.Pending.ToString()}, {ReviewDecisionWorkStatus.Retrying.ToString()}) AND julianday(NextAttemptUtc) <= julianday({now}) ORDER BY julianday(CreatedUtc), CreatedUtc, Id LIMIT 16")
+                : database.ReviewDecisionWorkItems.Where(x => (x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Retrying) && x.NextAttemptUtc <= now)
+                    .OrderBy(x => x.CreatedUtc).ThenBy(x => x.Id).Take(16);
+            ids = await eligible.AsNoTracking().Select(x => x.Id).ToListAsync(cancellationToken);
+        }
         foreach (var id in ids) await ProcessOneAsync(id, cancellationToken);
         return ids.Count > 0;
     }
@@ -112,44 +142,90 @@ public sealed class ReviewDecisionQueue(IServiceScopeFactory scopes, ILogger<Rev
     private async Task ProcessOneAsync(Guid id, CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+        var database = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+        // A queued selection may have been retried, claimed, or rescheduled while earlier work ran.
+        var selected = await database.ReviewDecisionWorkItems.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (selected is null || selected.Status is not (ReviewDecisionWorkStatus.Pending or ReviewDecisionWorkStatus.Retrying) || selected.NextAttemptUtc > DateTimeOffset.UtcNow) return;
         var now = DateTimeOffset.UtcNow;
-        var claimed = await db.ReviewDecisionWorkItems.Where(x => x.Id == id &&
-                (x.Status == ReviewDecisionWorkStatus.Pending || x.Status == ReviewDecisionWorkStatus.Retrying))
-            .ExecuteUpdateAsync(x => x.SetProperty(i => i.Status, ReviewDecisionWorkStatus.Processing)
-                .SetProperty(i => i.StartedUtc, now).SetProperty(i => i.AttemptCount, i => i.AttemptCount + 1), cancellationToken);
+        var claimed = await database.ReviewDecisionWorkItems.Where(x => x.Id == id && x.Status == selected.Status &&
+                x.AttemptCount == selected.AttemptCount && x.NextAttemptUtc == selected.NextAttemptUtc)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ReviewDecisionWorkStatus.Processing)
+                .SetProperty(x => x.StartedUtc, now).SetProperty(x => x.NextAttemptUtc, now + LeaseDuration)
+                .SetProperty(x => x.AttemptCount, x => x.AttemptCount + 1), cancellationToken);
         if (claimed == 0) return;
-        var item = await db.ReviewDecisionWorkItems.SingleAsync(x => x.Id == id, cancellationToken);
+        var attempt = selected.AttemptCount + 1;
+        using var processing = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var heartbeatStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var heartbeat = RenewLeaseAsync(id, attempt, processing, heartbeatStop.Token);
         try
         {
             var rules = scope.ServiceProvider.GetRequiredService<IRuleManagementService>();
-            if (item.Action == RuleAction.DeleteOneMessage)
-                foreach (var messageId in JsonSerializer.Deserialize<Guid[]>(item.MessageIdsJson) ?? [])
-                    await rules.SetMessageDecisionAsync(new MessageDecision { OwnerUserId = item.OwnerUserId, SourceMessageHeaderId = messageId, Action = RuleAction.DeleteOneMessage }, cancellationToken);
+            if (selected.Action == RuleAction.DeleteOneMessage)
+                foreach (var messageId in JsonSerializer.Deserialize<Guid[]>(selected.MessageIdsJson) ?? [])
+                {
+                    processing.Token.ThrowIfCancellationRequested();
+                    await rules.SetMessageDecisionAsync(new MessageDecision { OwnerUserId = selected.OwnerUserId, SourceMessageHeaderId = messageId, Action = RuleAction.DeleteOneMessage }, processing.Token);
+                }
             else
             {
-                var existing = await db.MailRules.AsNoTracking().FirstOrDefaultAsync(x => x.OwnerUserId == item.OwnerUserId && x.Scope == RuleScope.User && x.MatchType == item.MatchType && x.MatchValue.ToLower() == item.MatchValue.ToLower(), cancellationToken);
-                await rules.AddOrUpdateAsync(new MailRule { Id = existing?.Id ?? item.Id, OwnerUserId = item.OwnerUserId, Action = item.Action, Scope = RuleScope.User, MatchType = item.MatchType, MatchValue = item.MatchValue, DeliveredMessageRetentionDays = item.RetentionDays }, cancellationToken);
-
-                // AddOrUpdateAsync intentionally returns early for an identical persisted rule.  That is
-                // normally useful, but a process can die after persisting that rule and before its
-                // previous catalog pass finishes.  The work item's completion boundary therefore owns
-                // a replay-safe full pass: retries always finish the pass before acknowledging work.
-                // Evaluation and delivery are idempotent, so redoing a completed pass is safe too.
+                var existing = await database.MailRules.AsNoTracking().FirstOrDefaultAsync(x => x.OwnerUserId == selected.OwnerUserId && x.Scope == RuleScope.User && x.MatchType == selected.MatchType && x.MatchValue.ToLower() == selected.MatchValue.ToLower(), processing.Token);
+                await rules.PersistAsync(new MailRule { Id = existing?.Id ?? selected.Id, OwnerUserId = selected.OwnerUserId, Action = selected.Action, Scope = RuleScope.User, MatchType = selected.MatchType, MatchValue = selected.MatchValue, DeliveredMessageRetentionDays = selected.RetentionDays }, processing.Token);
+                logger.LogInformation("Review decision {WorkItemId} attempt {Attempt}: rule persisted; reevaluation starting", id, attempt);
+                // Exactly one replay-safe pass, including when a crash occurred after rule persistence.
                 await scope.ServiceProvider.GetRequiredService<IRuleEvaluationService>()
-                    .ReevaluateOwnedHeadersAsync(item.OwnerUserId, cancellationToken);
+                    .ReevaluateOwnedHeadersAsync(selected.OwnerUserId, processing.Token);
+                logger.LogInformation("Review decision {WorkItemId} attempt {Attempt}: reevaluation finished", id, attempt);
             }
-            item.Status = ReviewDecisionWorkStatus.Completed; item.CompletedUtc = DateTimeOffset.UtcNow; item.LastError = null;
-            await db.SaveChangesAsync(cancellationToken);
+            processing.Token.ThrowIfCancellationRequested();
+            var completed = await database.ReviewDecisionWorkItems.Where(x => x.Id == id && x.Status == ReviewDecisionWorkStatus.Processing && x.AttemptCount == attempt)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ReviewDecisionWorkStatus.Completed)
+                    .SetProperty(x => x.CompletedUtc, DateTimeOffset.UtcNow).SetProperty(x => x.LastError, (string?)null), cancellationToken);
+            if (completed == 0) logger.LogWarning("Review decision {WorkItemId} attempt {Attempt}: completion ignored after ownership changed", id, attempt);
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (processing.IsCancellationRequested)
         {
-            item.LastError = "Processing failed; retry is scheduled.";
-            item.StartedUtc = null;
-            item.Status = item.AttemptCount >= 3 ? ReviewDecisionWorkStatus.Failed : ReviewDecisionWorkStatus.Retrying;
-            item.NextAttemptUtc = DateTimeOffset.UtcNow.AddSeconds(Math.Pow(2, item.AttemptCount));
-            await db.SaveChangesAsync(cancellationToken);
-            logger.LogWarning(ex, "Review decision work item {WorkItemId} failed on attempt {Attempt}", item.Id, item.AttemptCount);
+            // Shutdown or lost ownership: leave the durable lease to expire, never acknowledge it.
+        }
+        catch (Exception ex)
+        {
+            if (!processing.IsCancellationRequested)
+                await database.ReviewDecisionWorkItems.Where(x => x.Id == id && x.Status == ReviewDecisionWorkStatus.Processing && x.AttemptCount == attempt)
+                    .ExecuteUpdateAsync(update => update.SetProperty(x => x.LastError, "Processing failed; retry is scheduled.")
+                        .SetProperty(x => x.StartedUtc, (DateTimeOffset?)null)
+                        .SetProperty(x => x.Status, attempt >= 3 ? ReviewDecisionWorkStatus.Failed : ReviewDecisionWorkStatus.Retrying)
+                        .SetProperty(x => x.NextAttemptUtc, DateTimeOffset.UtcNow.AddSeconds(Math.Pow(2, attempt))), cancellationToken);
+            logger.LogWarning(ex, "Review decision work item {WorkItemId} failed on attempt {Attempt}", id, attempt);
+        }
+        finally
+        {
+            await heartbeatStop.CancelAsync();
+            await heartbeat;
+        }
+    }
+
+    private async Task RenewLeaseAsync(Guid id, int attempt, CancellationTokenSource processing, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(RenewalInterval, cancellationToken);
+                await using var scope = scopes.CreateAsyncScope();
+                var database = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+                var renewed = await database.ReviewDecisionWorkItems.Where(x => x.Id == id && x.Status == ReviewDecisionWorkStatus.Processing && x.AttemptCount == attempt)
+                    .ExecuteUpdateAsync(update => update.SetProperty(x => x.NextAttemptUtc, DateTimeOffset.UtcNow + LeaseDuration), cancellationToken);
+                if (renewed == 0)
+                {
+                    await processing.CancelAsync();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Review decision lease renewal failed for {WorkItemId}; stopping this attempt", id);
+            await processing.CancelAsync();
         }
     }
 

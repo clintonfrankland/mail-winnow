@@ -1,14 +1,34 @@
 # MailWinnow
 
-Current shipped version: **1.14.0.115**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.15.0.119**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    User[Household user] --> Web[Blazor Web: durable enqueue and SQL badge reads]
+    Admin[Administrator] --> Web
+    Web --> SQL[(SQL Server: rules, catalogue, queue, count snapshots)]
+    Worker[Worker: queue, evaluation, sync, count refresh] --> SQL
+    Worker --> Source[Source IMAP]
+    Worker --> Destination[Private destination IMAPS]
+    Web -->|Explicit message list/preview only| Destination
+    Migrator[Explicit deployment migrator] --> SQL
+```
+
+## Review responsiveness
+
+Sender allow/block commits a durable command, removes the local message rows, then processes the work in **Worker only**. The sidebar reads SQL count projections, not the full mailbox or live IMAP. Each durable command owns one replay-safe evaluation pass with indexed matching, 200-header tracked-state bounds, and renewable owned leases. Destination counts are worker-maintained snapshots; they refresh after a 60-second worker interval plus pass time and the sidebar's 15-second poll. Last successful counts survive IMAP failures.
+
+See [queue performance, freshness, restart behavior, migration, and verification](docs/review-queue-performance.md). Deployment must stop old Web/Worker consumers before activating the new lease-aware worker. The migration adds only nullable destination-count fields; accepted commands and existing mail remain intact.
 
 ## Solution layout
 
 `MailWinnow.sln` is the repository entry point. Source projects live in `src/`; automated tests live in `tests/`.
 
-- `MailWinnow.Web` is the Blazor host and the future authentication boundary.
+- `MailWinnow.Web` is the Blazor host and authentication boundary.
 - `MailWinnow.Worker` is the independently runnable scheduled IMAP-processing host.
 - `MailWinnow.Core` contains dependency-free entities, interfaces, rule logic, and shared models.
 - `MailWinnow.Infrastructure` contains implementations for EF Core, MailKit, encryption, and other external services. It may depend on Core, but Core never depends on it.
@@ -29,7 +49,7 @@ dotnet build MailWinnow.sln --no-restore
 dotnet test MailWinnow.sln --no-build
 ```
 
-`Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. The initial EF migration intentionally contains no application tables because no application entity model has been implemented yet.
+`Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. The initial EF migration was an empty baseline; later migrations define the current application schema.
 
 Blazor query-string filters must bind only framework-supported scalar types. For enum filters, bind the raw query value as `string`, parse it explicitly with `Enum.TryParse`, and treat missing or invalid values as an unfiltered request. Keep regression coverage for missing, valid, case-insensitive, and invalid values so a filter cannot prevent its page from rendering.
 
@@ -128,3 +148,75 @@ docker compose --project-name mailwinnow-production \
 For each environment, verify from both actual application containers that DNS resolves and the public TLS chain validates. `openssl s_client` must exit successfully without `-verify_none`; install/use an ephemeral diagnostic container in the same Compose network if the minimal runtime image lacks these tools. Then request `/healthz` and confirm the Operations page shows a current Worker heartbeat. Confirm database identity using a non-secret database name query from each container network, and compare it with the expected scoped database. Never print the connection variable itself in deployment output.
 
 The credential-safe `MailWinnow.DeploymentProbe` performs those database, DNS, TCP, and strict TLS checks using the actual container environment. Publish it, copy the output directory into each running Web and Worker container, and execute `dotnet MailWinnow.DeploymentProbe.dll` there. Its JSON output contains only the database name, connectivity booleans, heartbeat freshness, TLS protocol, and the invalid-certificate-bypass state. It never emits the connection string or mailbox credentials.
+
+
+## Technologies and dependencies
+
+| Technology | Version | Role |
+|---|---|---|
+| .NET / ASP.NET Core / Blazor | 10.0 | Web, worker, and tooling runtime |
+| Entity Framework Core | 10.0.10 | SQL Server persistence and explicit migrations |
+| SQL Server | Runtime supplied by Home Helm | Durable catalogue, queues, snapshots and identity |
+| MailKit / MimeKit | MailKit 4.17.0 (resolved MIME dependency) | IMAP connection, fetching, delivery and MIME parsing |
+| Docker Compose / nginx | Host runtime / nginx 1.29 | Separate Web/Worker services and existing health-checked route cutover |
+| xUnit / bUnit | 2.9.3 / 2.9.0 | Unit, SQL-fixture and rendered UI regressions |
+
+Exact per-project package versions, project references, and the source file inventory are in [source and dependency reference](docs/source-reference.md).
+
+## Domain and SQL objects
+
+| Table/domain concept | Purpose |
+|---|---|
+| `SourceMailboxes` | Owner-bound upstream IMAP account and sync state |
+| `SourceMailboxFolderSyncStates` | Folder UIDVALIDITY/checkpoints for incremental catalogue sync |
+| `SourceMessageHeaders` | Header-only catalogue with persisted evaluation/deletion state |
+| `DestinationMailboxes` | Private local mailbox and last worker-observed inbox count/timestamp |
+| `MailRules` | Reusable source/user-scoped allow/block rules, time windows and retention |
+| `MessageDecisions` | Explicit per-message approve/delete/pending overrides |
+| `ReviewDecisionWorkItems` | Durable decisions, active idempotency key, retry/lease/completion evidence |
+| `MessageDeliveries` | Destination append and source-deletion idempotency/retention receipts |
+| `AuditEvents` | Metadata-only administrative/rule/decision audit trail |
+| `WorkerHeartbeats` | Worker liveness and scheduling observations |
+| Identity tables (`AspNetUsers`, roles, claims, logins, tokens, user roles) | Household authentication and authorization |
+| `__EFMigrationsHistory` | Explicit application-schema migration history |
+
+The EF model and migration history are authoritative for exact names and fields. No application views or stored procedures are added by this repair.
+
+## User workflows
+
+```mermaid
+flowchart TD
+    SignIn[Sign in] --> Mailboxes[Manage owned source and destination mailboxes]
+    SignIn --> Inbox[Read delivered inbox]
+    Inbox --> Read[Read message / choose remote images]
+    Read --> Trash[Delete to destination Trash]
+    SignIn --> Review[Review pending messages / sender or subject groups]
+    Review --> Preview[Open safe source preview]
+    Review --> Decision[Allow / block / delete]
+    Decision --> Accepted[Durable enqueue]
+    Accepted --> Removed[Remove local rows]
+    Accepted --> Processing[Worker evaluation and mailbox actions]
+    SignIn --> Rules[Manage reusable rules]
+    Rules --> Impact[Preview changes]
+    Impact --> Confirm[Confirm save]
+    Confirm --> Evaluation[Reevaluate owned catalogue]
+```
+
+```mermaid
+flowchart TD
+    Admin[Administrator sign in] --> Operations[Operations and worker health]
+    Operations --> Failures[Inspect failed sync/delivery/queue evidence]
+    Failures --> Retry[Explicit supported retry]
+    Admin --> Accounts[Manage household accounts]
+    Admin --> Control[Pause/resume mailbox or request sync]
+    Control --> Worker[Worker handles scheduled request]
+```
+
+## Constraints and pitfalls
+
+- Preserve owner boundaries, protected credentials, durable accepted commands and mailbox UIDVALIDITY/idempotency checks. Do not introduce an in-memory-only decision queue.
+- Keep reusable logic in Core/Infrastructure, async data access and the existing UI system. Fresh read scopes and bounded tracked state must not be replaced with circuit-long catalogue contexts.
+- Apply new schema through additive EF migrations during explicit deployment, never normal host startup. Keep runtime configuration and secrets out of source and logs.
+- Review badges use eventually consistent worker projections; they do not promise instant visibility of external IMAP changes. Actual Inbox remains a live read.
+- Old and new queue consumers must not overlap during this lease-semantics upgrade. Preserve old images for rollback and use the current Home Helm production Compose/cutover paths.
+- Passing a process launch or a short tool wait is not test completion. Collect terminal build/test output and verify installed identity and health before reporting deployment complete.

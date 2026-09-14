@@ -15,8 +15,8 @@ public sealed class NavMenuRenderedTests : BunitContext
     [Fact]
     public void AuthenticatedNavigationRendersWhileCountsArePendingAndUpdatesBadgesIndependently()
     {
-        var inbox = new DeferredInboxReader();
-        var reviews = new DeferredMessageReviewService();
+        var inbox = new DeferredNavigationCounts();
+        var reviews = inbox;
         ConfigureAuthenticatedServices(inbox, reviews);
 
         var menu = Render<NavMenu>();
@@ -24,12 +24,7 @@ public sealed class NavMenuRenderedTests : BunitContext
         AssertAuthenticatedItemsRemainVisible(menu);
         Assert.Empty(menu.FindAll(".sidebar-count"));
 
-        reviews.CompleteRecent(
-        [
-            ReviewItem("sender-one@example.test"),
-            ReviewItem("sender-two@example.test"),
-            ReviewItem("sender-one@example.test")
-        ]);
+        reviews.CompleteRecent(new(3, 2));
 
         menu.WaitForAssertion(() =>
         {
@@ -58,8 +53,8 @@ public sealed class NavMenuRenderedTests : BunitContext
     [Fact]
     public void AuthenticatedNavigationRendersWhenCountServicesFail()
     {
-        var inbox = new DeferredInboxReader();
-        var reviews = new DeferredMessageReviewService();
+        var inbox = new DeferredNavigationCounts();
+        var reviews = inbox;
         ConfigureAuthenticatedServices(inbox, reviews);
 
         var menu = Render<NavMenu>();
@@ -74,12 +69,11 @@ public sealed class NavMenuRenderedTests : BunitContext
         });
     }
 
-    private void ConfigureAuthenticatedServices(DeferredInboxReader inbox, DeferredMessageReviewService reviews)
+    private void ConfigureAuthenticatedServices(DeferredNavigationCounts inbox, DeferredNavigationCounts reviews)
     {
         Services.AddLogging(builder => builder.AddDebug());
         Services.AddSingleton(new NavigationCountState());
-        Services.AddSingleton<IInboxReaderService>(inbox);
-        Services.AddSingleton<IMessageReviewService>(reviews);
+        Services.AddSingleton<INavigationCountService>(inbox);
 
         var authorization = AddAuthorization();
         authorization.SetAuthorized("household-user");
@@ -96,45 +90,15 @@ public sealed class NavMenuRenderedTests : BunitContext
         Assert.Contains("Sign out", text);
     }
 
-    private static MessageReviewItem ReviewItem(string sender) => new(Guid.NewGuid(), sender, "Subject", "Account",
-        DateTimeOffset.UtcNow, "Source: enabled", RuleOutcome.Pending, "Awaiting review", "No matching reusable rule",
-        "Destination retention: forever");
-
-    private sealed class DeferredInboxReader : IInboxReaderService
+    private sealed class DeferredNavigationCounts : INavigationCountService
     {
-        private readonly TaskCompletionSource<InboxLoadResult<int>> count = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task<InboxLoadResult<int>> CountAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => count.Task;
-
-        public Task<InboxLoadResult<IReadOnlyList<InboxMessageSummary>>> ListAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<InboxLoadResult<InboxMessageContent>> ReadAsync(ClaimsPrincipal user, uint uid, uint uidValidity, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public void CompleteCount(int value) => count.SetResult(new(true, value));
-
+        private readonly TaskCompletionSource<int?> count = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<ReviewNavigationCounts> recent = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<int?> GetInboxCountAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => count.Task;
+        public Task<ReviewNavigationCounts> GetReviewCountsAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => recent.Task;
+        public void CompleteCount(int value) => count.SetResult(value);
         public void FailCount() => count.SetException(new InvalidOperationException("Inbox count failed"));
-    }
-
-    private sealed class DeferredMessageReviewService : IMessageReviewService
-    {
-        private readonly TaskCompletionSource<IReadOnlyList<MessageReviewItem>> recent = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task<IReadOnlyList<MessageReviewItem>> GetRecentAsync(ClaimsPrincipal user, MessageReviewFilter filter, CancellationToken cancellationToken = default) =>
-            recent.Task;
-
-        public Task<IReadOnlyList<MessageReviewGroup>> GetBySenderAsync(ClaimsPrincipal user, MessageReviewFilter filter, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<MessageReviewGroup>> GetBySubjectAsync(ClaimsPrincipal user, MessageReviewFilter filter, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<ReviewRule>> GetRulesAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public void CompleteRecent(IReadOnlyList<MessageReviewItem> items) => recent.SetResult(items);
-
+        public void CompleteRecent(ReviewNavigationCounts value) => recent.SetResult(value);
         public void FailRecent() => recent.SetException(new InvalidOperationException("Review counts failed"));
     }
 }

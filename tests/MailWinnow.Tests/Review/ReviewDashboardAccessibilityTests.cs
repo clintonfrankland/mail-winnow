@@ -121,8 +121,9 @@ public sealed class ReviewDashboardAccessibilityTests
         Assert.Contains("@CountState.ReviewSenderCount pending senders", navigation);
         Assert.Contains("InteractiveServerRenderMode(prerender: false)", navigation);
         Assert.Contains("ScopeFactory.CreateAsyncScope()", navigation);
-        Assert.Contains("GetRequiredService<IInboxReaderService>()", navigation);
-        Assert.Contains("GetRequiredService<IMessageReviewService>()", navigation);
+        Assert.Contains("GetRequiredService<INavigationCountService>()", navigation);
+        Assert.DoesNotContain("GetRequiredService<IInboxReaderService>()", navigation);
+        Assert.DoesNotContain("GetRequiredService<IMessageReviewService>()", navigation);
         Assert.Contains("CountState.Changed += OnCountsChanged", navigation);
         Assert.Contains("CountState.Changed -= OnCountsChanged", navigation);
         Assert.Contains(".sidebar-count", navigationStyles);

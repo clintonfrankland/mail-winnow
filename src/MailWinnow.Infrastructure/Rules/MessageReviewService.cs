@@ -30,19 +30,21 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
     public async Task<IReadOnlyList<MessageReviewItem>> GetRecentAsync(ClaimsPrincipal user, MessageReviewFilter filter, CancellationToken cancellationToken = default)
     {
         var owner = ownership.RequireCurrentUserId(user);
-        var sourceQuery = db.SourceMailboxes.Where(x => x.OwnerUserId == owner);
+        var sourceQuery = db.SourceMailboxes.AsNoTracking().Where(x => x.OwnerUserId == owner);
         if (filter.SourceMailboxId is { } sourceId) sourceQuery = sourceQuery.Where(x => x.Id == sourceId);
         var sources = await sourceQuery.ToDictionaryAsync(x => x.Id, cancellationToken);
         // Order after materialization because SQLite (used by the service tests) cannot order DateTimeOffset values.
-        var headers = (await db.SourceMessageHeaders.Where(x => sources.Keys.Contains(x.SourceMailboxId)).ToListAsync(cancellationToken))
+        var headers = (await ReviewProjectionQueries.WithoutQueuedMessages(db, owner, db.SourceMessageHeaders.AsNoTracking().Where(x => sourceQuery.Select(source => source.Id).Contains(x.SourceMailboxId))).ToListAsync(cancellationToken))
             .OrderByDescending(x => x.ReceivedUtc).ToList();
-        var decisions = await db.MessageDecisions.Where(x => x.OwnerUserId == owner && headers.Select(h => h.Id).Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
-        var rules = await db.MailRules.Where(x => x.OwnerUserId == owner).ToListAsync(cancellationToken);
-        var deliveries = await db.MessageDeliveries.Where(x => x.OwnerUserId == owner && headers.Select(h => h.Id).Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
+        var decisions = await db.MessageDecisions.AsNoTracking().Where(x => x.OwnerUserId == owner).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
+        var rules = await db.MailRules.AsNoTracking().Where(x => x.OwnerUserId == owner).ToListAsync(cancellationToken);
+        var deliveries = await db.MessageDeliveries.AsNoTracking().Where(x => x.OwnerUserId == owner).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
+        var compiledRules = RuleEvaluator.Compile(rules.Select(x => new RuleCandidate(x.Id, x.Action, x.Scope, x.MatchType, x.MatchValue, x.SourceMailboxId, x.EffectiveUtc, x.ExpiresUtc)));
+        var rulesById = rules.ToDictionary(x => x.Id);
         var now = DateTimeOffset.UtcNow;
         // Message Review is an inbox for unresolved decisions, not a history view.
         // Evaluate against the current rules so expired or edited rules are reflected immediately.
-        var items = headers.Select(header => ToItem(header, sources[header.SourceMailboxId], rules, decisions.GetValueOrDefault(header.Id), deliveries.GetValueOrDefault(header.Id), now))
+        var items = headers.Select(header => ToItem(header, sources[header.SourceMailboxId], compiledRules, rulesById, decisions.GetValueOrDefault(header.Id), deliveries.GetValueOrDefault(header.Id), now))
             .Where(x => x.Outcome == RuleOutcome.Pending);
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -61,7 +63,7 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
     public async Task<IReadOnlyList<ReviewRule>> GetRulesAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         var owner = ownership.RequireCurrentUserId(user);
-        return await db.MailRules.Where(x => x.OwnerUserId == owner).OrderByDescending(x => x.CreatedUtc)
+        return await db.MailRules.AsNoTracking().Where(x => x.OwnerUserId == owner).OrderByDescending(x => x.CreatedUtc)
             .Select(x => new ReviewRule(x.Id, x.Action, x.Scope, x.MatchType, x.MatchValue, x.SourceMailboxId,
                 x.ExpiresUtc, x.DeliveredMessageRetentionDays, x.CreatedUtc)).ToListAsync(cancellationToken);
     }
@@ -73,10 +75,10 @@ public sealed class MessageReviewService(MailWinnowDbContext db, IOwnershipAutho
             group.OrderByDescending(x => x.ReceivedUtc).Take(3).Select(x => x.Subject).ToList(),
             group.Select(x => x.RuleContext).Distinct().Take(3).ToList())).ToList();
 
-    private static MessageReviewItem ToItem(SourceMessageHeader header, SourceMailbox source, IReadOnlyList<MailRule> rules, MessageDecision? decision, MessageDelivery? delivery, DateTimeOffset now)
+    private static MessageReviewItem ToItem(SourceMessageHeader header, SourceMailbox source, RuleEvaluator.CompiledRuleSet compiledRules, IReadOnlyDictionary<Guid, MailRule> rulesById, MessageDecision? decision, MessageDelivery? delivery, DateTimeOffset now)
     {
-        var evaluation = RuleEvaluator.Evaluate(rules.Select(x => new RuleCandidate(x.Id, x.Action, x.Scope, x.MatchType, x.MatchValue, x.SourceMailboxId, x.EffectiveUtc, x.ExpiresUtc)), header.From, header.Subject, header.SourceMailboxId, now, decision?.Action);
-        var applied = evaluation.AppliedRule is null ? null : rules.Single(x => x.Id == evaluation.AppliedRule.Id);
+        var evaluation = compiledRules.Evaluate(header.From, header.Subject, header.SourceMailboxId, now, decision?.Action);
+        var applied = evaluation.AppliedRule is null ? null : rulesById[evaluation.AppliedRule.Id];
         var ruleContext = decision is not null ? "One-message approval" : applied is null ? "No matching reusable rule" : $"{applied.Action} via {applied.MatchType}";
         if (applied?.ExpiresUtc is { } expiry) ruleContext += $"; rule expires {expiry:u}";
         var retention = applied?.DeliveredMessageRetentionDays is { } days

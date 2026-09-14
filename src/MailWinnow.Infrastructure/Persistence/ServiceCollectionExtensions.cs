@@ -48,7 +48,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRuleEvaluationService, RuleEvaluationService>();
         services.AddScoped<IRuleImpactPreviewService, RuleImpactPreviewService>();
         services.AddScoped<IRuleManagementService, RuleManagementService>();
-        services.AddScoped<IMessageReviewService, MessageReviewService>();
+        services.AddScoped<MessageReviewService>();
+        services.AddScoped<IMessageReviewService, ScopedMessageReviewService>();
+        services.AddScoped<INavigationCountService, NavigationCountService>();
+        services.AddScoped<NavigationProjectionRefreshService>();
         services.AddScoped<IReviewMessagePreviewService, ReviewMessagePreviewService>();
         services.AddSingleton<ReviewDecisionQueue>();
         services.AddSingleton<IReviewDecisionQueue>(provider => provider.GetRequiredService<ReviewDecisionQueue>());

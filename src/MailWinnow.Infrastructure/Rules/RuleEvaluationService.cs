@@ -20,7 +20,7 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDelive
     {
         var header = await HeaderForOwnerAsync(ownerUserId, headerId, cancellationToken);
         var decision = await db.MessageDecisions.SingleOrDefaultAsync(x => x.OwnerUserId == ownerUserId && x.SourceMessageHeaderId == headerId, cancellationToken);
-        var rules = await db.MailRules.Where(x => x.OwnerUserId == ownerUserId).ToListAsync(cancellationToken);
+        var rules = await db.MailRules.AsNoTracking().Where(x => x.OwnerUserId == ownerUserId).ToListAsync(cancellationToken);
         var result = RuleEvaluator.Evaluate(rules.Select(ToCandidate), header.From, header.Subject, header.SourceMailboxId, nowUtc, decision?.Action);
         header.EvaluationOutcome = result.Outcome;
         header.EvaluatedUtc = nowUtc;
@@ -40,8 +40,8 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDelive
 
     private async Task ReevaluateAsync(string ownerUserId, bool pendingOnly, CancellationToken cancellationToken)
     {
-        var rules = await db.MailRules.Where(x => x.OwnerUserId == ownerUserId).ToListAsync(cancellationToken);
-        var candidates = rules.Select(ToCandidate).ToArray();
+        var rules = await db.MailRules.AsNoTracking().Where(x => x.OwnerUserId == ownerUserId).ToListAsync(cancellationToken);
+        var candidates = RuleEvaluator.Compile(rules.Select(ToCandidate));
         var now = DateTimeOffset.UtcNow;
         Guid? cursor = null;
         while (true)
@@ -52,19 +52,35 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDelive
             var headers = await query.OrderBy(x => x.Id).Take(200).ToListAsync(cancellationToken);
             if (headers.Count == 0) return;
             var ids = headers.Select(x => x.Id).ToArray();
-            var decisions = await db.MessageDecisions.Where(x => x.OwnerUserId == ownerUserId && ids.Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
+            var decisions = await db.MessageDecisions.AsNoTracking().Where(x => x.OwnerUserId == ownerUserId && ids.Contains(x.SourceMessageHeaderId)).ToDictionaryAsync(x => x.SourceMessageHeaderId, cancellationToken);
             var approved = new List<(Guid HeaderId, Guid? RuleId)>();
             foreach (var header in headers)
             {
-                var result = RuleEvaluator.Evaluate(candidates, header.From, header.Subject, header.SourceMailboxId, now, decisions.GetValueOrDefault(header.Id)?.Action);
-                header.EvaluationOutcome = result.Outcome;
-                header.EvaluatedUtc = now;
-                if (result.Outcome == RuleOutcome.Allow) approved.Add((header.Id, result.AppliedRule?.Id));
+                var result = candidates.Evaluate(header.From, header.Subject, header.SourceMailboxId, now, decisions.GetValueOrDefault(header.Id)?.Action);
+                if (header.EvaluationOutcome != result.Outcome || header.EvaluatedUtc is null)
+                {
+                    header.EvaluationOutcome = result.Outcome;
+                    header.EvaluatedUtc = now;
+                }
+                if (result.Outcome == RuleOutcome.Allow && header.BlockedSourceDeletedUtc is null)
+                    approved.Add((header.Id, result.AppliedRule?.Id));
             }
             await db.SaveChangesAsync(cancellationToken);
-            if (deliveries is not null)
-                foreach (var approvedHeader in approved) await deliveries.QueueApprovedAsync(ownerUserId, approvedHeader.HeaderId, approvedHeader.RuleId, cancellationToken);
+            if (deliveries is not null && approved.Count > 0)
+            {
+                var existingDeliveryIds = (await db.MessageDeliveries.AsNoTracking()
+                    .Where(delivery => delivery.OwnerUserId == ownerUserId && ids.Contains(delivery.SourceMessageHeaderId))
+                    .Select(delivery => delivery.SourceMessageHeaderId).ToListAsync(cancellationToken)).ToHashSet();
+                foreach (var approvedHeader in approved.Where(header => !existingDeliveryIds.Contains(header.HeaderId)))
+                    await deliveries.QueueApprovedAsync(ownerUserId, approvedHeader.HeaderId, approvedHeader.RuleId, cancellationToken);
+            }
             cursor = headers[^1].Id;
+            // Detach only this page's saved data. Never Clear a shared context: the caller
+            // may own the durable work item whose completion still needs to be committed.
+            foreach (var header in headers) db.Entry(header).State = EntityState.Detached;
+            foreach (var entry in db.ChangeTracker.Entries<MessageDelivery>()
+                .Where(entry => ids.Contains(entry.Entity.SourceMessageHeaderId) && entry.State == EntityState.Unchanged).ToArray())
+                entry.State = EntityState.Detached;
         }
     }
 
@@ -78,6 +94,7 @@ public sealed class RuleEvaluationService(MailWinnowDbContext db, IMessageDelive
 public interface IRuleManagementService
 {
     Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default);
+    Task PersistAsync(MailRule rule, CancellationToken cancellationToken = default);
     Task ReplaceAsync(string ownerUserId, Guid ruleId, MailRule replacement, CancellationToken cancellationToken = default);
     Task DeleteAsync(string ownerUserId, Guid ruleId, CancellationToken cancellationToken = default);
     Task SetMessageDecisionAsync(MessageDecision decision, CancellationToken cancellationToken = default);
@@ -89,15 +106,25 @@ public sealed class RuleManagementService(MailWinnowDbContext db, IRuleEvaluatio
 {
     public async Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default)
     {
+        if (await PersistRuleAsync(rule, cancellationToken))
+            await ReevaluateOwnedHeadersAsync(rule.OwnerUserId, cancellationToken);
+    }
+
+    /// <summary>The durable queue owns evaluation completion and must replay it even for an identical saved rule.</summary>
+    public async Task PersistAsync(MailRule rule, CancellationToken cancellationToken = default) =>
+        await PersistRuleAsync(rule, cancellationToken);
+
+    private async Task<bool> PersistRuleAsync(MailRule rule, CancellationToken cancellationToken)
+    {
         Validate(rule);
         if (rule.Scope == RuleScope.SourceAccount && !await db.SourceMailboxes.AnyAsync(x => x.Id == rule.SourceMailboxId && x.OwnerUserId == rule.OwnerUserId, cancellationToken))
             throw new InvalidOperationException("The source mailbox was not found for this user.");
         var existing = await db.MailRules.SingleOrDefaultAsync(x => x.Id == rule.Id && x.OwnerUserId == rule.OwnerUserId, cancellationToken);
-        if (existing is not null && HasSameConfiguration(existing, rule)) return;
+        if (existing is not null && HasSameConfiguration(existing, rule)) return false;
         if (existing is null) db.MailRules.Add(rule); else db.Entry(existing).CurrentValues.SetValues(rule);
         await db.SaveChangesAsync(cancellationToken);
         if (audit is not null) await audit.RecordAsync(existing is null ? "rule.created" : "rule.updated", rule.OwnerUserId, rule.OwnerUserId, "rule", rule.Id.ToString("N"), cancellationToken: cancellationToken);
-        await ReevaluateOwnedHeadersAsync(rule.OwnerUserId, cancellationToken);
+        return true;
     }
 
     public async Task DeleteAsync(string ownerUserId, Guid ruleId, CancellationToken cancellationToken = default)

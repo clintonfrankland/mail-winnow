@@ -5,6 +5,27 @@ namespace MailWinnow.Tests.Review;
 public sealed class NavigationCountStateTests
 {
     [Fact]
+    public void InFlightRefreshDoesNotUndoCountsChangedByAnAcceptedClick()
+    {
+        var state = new NavigationCountState();
+        state.SetInboxCount(10);
+        state.SetReviewCounts(10, 5);
+        var inboxRevision = state.InboxRevision;
+        var reviewRevision = state.ReviewRevision;
+        state.SetInboxCount(9);
+        state.SetReviewCounts(8, 4);
+
+        state.ApplyInboxRefresh(10, inboxRevision);
+        state.ApplyReviewRefresh(10, 5, reviewRevision);
+
+        Assert.Equal(9, state.InboxCount);
+        Assert.Equal(8, state.ReviewMessageCount);
+        Assert.Equal(4, state.ReviewSenderCount);
+        state.ApplyReviewRefresh(7, 3, state.ReviewRevision);
+        Assert.Equal(7, state.ReviewMessageCount);
+    }
+
+    [Fact]
     public void CountChangesArePublishedAndNegativeValuesAreClamped()
     {
         var state = new NavigationCountState();

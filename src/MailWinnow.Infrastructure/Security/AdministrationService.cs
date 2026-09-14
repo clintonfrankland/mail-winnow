@@ -102,8 +102,10 @@ public sealed class AdministrationService(MailWinnowDbContext db, IOptions<Local
     public async Task RecordAsync(string eventType, string? actorUserId, string? subjectUserId = null, string? resourceType = null, string? resourceId = null, string? detail = null, CancellationToken cancellationToken = default)
     {
         // Free-form detail can be a mail body, attachment text, or credential. Retain only operation metadata.
-        db.AuditEvents.Add(new AuditEvent { EventType = eventType, ActorUserId = actorUserId, SubjectUserId = subjectUserId, ResourceType = resourceType, ResourceId = resourceId, Detail = null });
+        var entry = db.AuditEvents.Add(new AuditEvent { EventType = eventType, ActorUserId = actorUserId, SubjectUserId = subjectUserId, ResourceType = resourceType, ResourceId = resourceId, Detail = null });
         await db.SaveChangesAsync(cancellationToken);
+        // Immutable audit rows do not need to accumulate in a long-running worker scope.
+        entry.State = EntityState.Detached;
     }
     private static string RequireAdministrator(ClaimsPrincipal actor) => actor.IsInRole(AuthConstants.AdministratorRole)
         ? actor.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new UnauthorizedAccessException() : throw new UnauthorizedAccessException("Administrator access is required.");

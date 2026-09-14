@@ -14,7 +14,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMailWinnowSqlServer(builder.Configuration);
 builder.Services.AddHostedService(provider => provider.GetRequiredService<MailWinnow.Infrastructure.Mailboxes.InboxDeletionQueue>());
-builder.Services.AddHostedService(provider => provider.GetRequiredService<MailWinnow.Infrastructure.Rules.ReviewDecisionQueue>());
+// Review decisions are durably enqueued here, but processed only by MailWinnow.Worker.
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddIdentityCookies();
 builder.Services.Configure<ForwardedHeadersOptions>(options =>

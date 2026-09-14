@@ -30,6 +30,8 @@ public sealed class MessageDeliveryService(
 
     public async Task QueueApprovedAsync(string ownerUserId, Guid headerId, Guid? approvalRuleId = null, CancellationToken cancellationToken = default)
     {
+        if (await db.MessageDeliveries.AsNoTracking().AnyAsync(delivery =>
+                delivery.SourceMessageHeaderId == headerId && delivery.OwnerUserId == ownerUserId, cancellationToken)) return;
         var header = await OwnedHeaderAsync(ownerUserId, headerId, cancellationToken);
         if (header.EvaluationOutcome != RuleOutcome.Allow) return;
         if (header.BlockedSourceDeletedUtc is not null) return; // a completed block deletion is intentionally irreversible.
@@ -38,8 +40,8 @@ public sealed class MessageDeliveryService(
         {
             db.MessageDeliveries.Add(new MessageDelivery { SourceMessageHeaderId = headerId, OwnerUserId = ownerUserId, ApprovalRuleId = approvalRuleId });
             if (audit is not null) await audit.RecordAsync("delivery.queued", ownerUserId, ownerUserId, "header", headerId.ToString("N"), cancellationToken: cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
         }
-        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Guid>> GetDueDeliveryIdsAsync(CancellationToken cancellationToken = default)

@@ -67,11 +67,12 @@
         {
             await using (var inboxScope = ScopeFactory.CreateAsyncScope())
             {
-                var inbox = await inboxScope.ServiceProvider.GetRequiredService<IInboxReaderService>()
-                    .CountAsync(user, cancellationToken);
-                if (inbox.Succeeded)
+                var revision = CountState.InboxRevision;
+                var inbox = await inboxScope.ServiceProvider.GetRequiredService<INavigationCountService>()
+                    .GetInboxCountAsync(user, cancellationToken);
+                if (inbox.HasValue)
                 {
-                    CountState.SetInboxCount(inbox.Value);
+                    CountState.ApplyInboxRefresh(inbox.Value, revision);
                 }
             }
         }
@@ -89,10 +90,10 @@
         try
         {
             await using var reviewScope = ScopeFactory.CreateAsyncScope();
-            var messages = await reviewScope.ServiceProvider.GetRequiredService<IMessageReviewService>()
-                .GetRecentAsync(user, new MessageReviewFilter(null, RuleOutcome.Pending, null), cancellationToken);
-            CountState.SetReviewCounts(messages.Count,
-                messages.Select(message => message.Sender).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            var revision = CountState.ReviewRevision;
+            var counts = await reviewScope.ServiceProvider.GetRequiredService<INavigationCountService>()
+                .GetReviewCountsAsync(user, cancellationToken);
+            CountState.ApplyReviewRefresh(counts.Messages, counts.Senders, revision);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

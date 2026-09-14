@@ -224,6 +224,163 @@ public sealed class ReviewDecisionQueueTests
         Assert.Equal(1, metrics.TerminalFailures);
     }
 
+    [Fact]
+    public async Task AcceptedClickIsDurableWithoutStartingBackgroundProcessing()
+    {
+        var evaluation = new BlockingEvaluationService();
+        await using var fixture = await QueueFixture.CreateAsync(evaluation);
+        var accepted = await fixture.Queue.QueueAsync(Principal("owner"), RuleAction.PermanentlyBlock,
+            RuleMatchType.ExactSender, "quick@test", null, []);
+        Assert.True(accepted.Succeeded);
+        Assert.False(evaluation.Entered.Task.IsCompleted);
+        await using var scope = fixture.Provider.CreateAsyncScope();
+        Assert.Equal(ReviewDecisionWorkStatus.Pending, (await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>()
+            .ReviewDecisionWorkItems.SingleAsync()).Status);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SupersededAttemptCannotCompleteOrRescheduleNewOwner(bool failEvaluation)
+    {
+        var evaluation = new BlockingEvaluationService { Fail = failEvaluation };
+        await using var fixture = await QueueFixture.CreateAsync(evaluation);
+        await fixture.Queue.QueueAsync(Principal("owner"), RuleAction.PermanentlyAllow,
+            RuleMatchType.ExactSender, "owned@test", null, []);
+        var processing = ProcessBatchAsync(fixture.Queue);
+        await evaluation.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await using (var scope = fixture.Provider.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+            var item = await database.ReviewDecisionWorkItems.SingleAsync();
+            // Simulate a lease expiry/reclaim while an uncooperative old evaluation is finishing.
+            item.AttemptCount++;
+            item.NextAttemptUtc = DateTimeOffset.UtcNow.AddMinutes(2);
+            await database.SaveChangesAsync();
+        }
+        evaluation.Release.TrySetResult();
+        await processing.WaitAsync(TimeSpan.FromSeconds(5));
+        await using var verification = fixture.Provider.CreateAsyncScope();
+        var retained = await verification.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.SingleAsync();
+        Assert.Equal(ReviewDecisionWorkStatus.Processing, retained.Status);
+        Assert.Equal(2, retained.AttemptCount);
+        Assert.Null(retained.CompletedUtc);
+        Assert.Null(retained.LastError);
+    }
+
+    [Fact]
+    public async Task LongRunningAttemptRenewsLeaseAndCannotBeReclaimedByAnotherProcessor()
+    {
+        var evaluation = new BlockingEvaluationService();
+        await using var fixture = await QueueFixture.CreateAsync(evaluation);
+        await fixture.Queue.QueueAsync(Principal("owner"), RuleAction.PermanentlyAllow,
+            RuleMatchType.ExactSender, "long@test", null, []);
+        var processing = ProcessBatchAsync(fixture.Queue);
+        await evaluation.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        DateTimeOffset initialExpiry;
+        await using (var scope = fixture.Provider.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+            var item = await database.ReviewDecisionWorkItems.SingleAsync();
+            initialExpiry = item.NextAttemptUtc;
+            item.StartedUtc = DateTimeOffset.UtcNow.AddMinutes(-5);
+            await database.SaveChangesAsync();
+        }
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            while (true)
+            {
+                await Task.Delay(100, timeout.Token);
+                await using var check = fixture.Provider.CreateAsyncScope();
+                var item = await check.ServiceProvider.GetRequiredService<MailWinnowDbContext>().ReviewDecisionWorkItems.SingleAsync(timeout.Token);
+                if (item.NextAttemptUtc > initialExpiry) break;
+            }
+            var secondProcessor = new ReviewDecisionQueue(fixture.Provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ReviewDecisionQueue>.Instance);
+            Assert.False(await ProcessBatchAsync(secondProcessor));
+            Assert.Equal(1, evaluation.Calls);
+        }
+        finally
+        {
+            evaluation.Release.TrySetResult();
+            await processing.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task SelectionFiltersFutureRetriesBeforeTakingBoundedBatch()
+    {
+        var evaluations = new RecordingEvaluationService();
+        await using var fixture = await QueueFixture.CreateAsync(evaluations);
+        await using (var scope = fixture.Provider.CreateAsyncScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+            for (var index = 0; index < 60; index++)
+                database.ReviewDecisionWorkItems.Add(new ReviewDecisionWorkItem
+                {
+                    OwnerUserId = "owner", Action = RuleAction.PermanentlyBlock, MatchType = RuleMatchType.ExactSender,
+                    MatchValue = $"sender{index}@test", IdempotencyKey = $"test-{index}", MessageIdsJson = "[]",
+                    Status = ReviewDecisionWorkStatus.Retrying,
+                    CreatedUtc = DateTimeOffset.UtcNow.AddMinutes(-60 + index),
+                    NextAttemptUtc = index < 40 ? DateTimeOffset.UtcNow.AddDays(1) : DateTimeOffset.UtcNow.AddMinutes(-1)
+                });
+            await database.SaveChangesAsync();
+        }
+        Assert.True(await ProcessBatchAsync(fixture.Queue));
+        Assert.Equal(16, evaluations.Owners.Count);
+        await using var verification = fixture.Provider.CreateAsyncScope();
+        var databaseCheck = verification.ServiceProvider.GetRequiredService<MailWinnowDbContext>();
+        Assert.Equal(16, await databaseCheck.ReviewDecisionWorkItems.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Completed));
+        Assert.Equal(44, await databaseCheck.ReviewDecisionWorkItems.CountAsync(x => x.Status == ReviewDecisionWorkStatus.Retrying));
+    }
+
+    private static Task<bool> ProcessBatchAsync(ReviewDecisionQueue queue) => (Task<bool>)typeof(ReviewDecisionQueue)
+        .GetMethod("ProcessBatchAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .Invoke(queue, [CancellationToken.None])!;
+
+    private sealed class BlockingEvaluationService : IRuleEvaluationService
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Fail { get; init; }
+        public int Calls { get; private set; }
+        public Task<RuleEvaluation> EvaluateAsync(string ownerUserId, Guid headerId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task ReevaluatePendingHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public async Task ReevaluateOwnedHeadersAsync(string ownerUserId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            if (Fail) throw new InvalidOperationException("Expected failure from superseded attempt.");
+        }
+    }
+
+    private sealed class QueueFixture(SqliteConnection connection, ServiceProvider provider) : IAsyncDisposable
+    {
+        public ServiceProvider Provider => provider;
+        public ReviewDecisionQueue Queue { get; } = new(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ReviewDecisionQueue>.Instance);
+        public static async Task<QueueFixture> CreateAsync(IRuleEvaluationService evaluation)
+        {
+            var connection = new SqliteConnection("Data Source=:memory:");
+            await connection.OpenAsync();
+            var services = new ServiceCollection();
+            services.AddDbContext<MailWinnowDbContext>(options => options.UseSqlite(connection));
+            services.AddScoped<IOwnershipAuthorizer, OwnershipAuthorizer>();
+            services.AddScoped<IRuleManagementService, RecordingRuleManagementService>();
+            services.AddScoped<IRuleEvaluationService>(_ => evaluation);
+            var provider = services.BuildServiceProvider();
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<MailWinnowDbContext>().Database.EnsureCreatedAsync();
+            return new QueueFixture(connection, provider);
+        }
+        public async ValueTask DisposeAsync()
+        {
+            Queue.Dispose();
+            await provider.DisposeAsync();
+            await connection.DisposeAsync();
+        }
+    }
+
     private static async Task EventuallyAsync(Func<Task<bool>> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -245,7 +402,9 @@ public sealed class ReviewDecisionQueueTests
         public int MaximumConcurrency { get; private set; }
         public TaskCompletionSource AllApplied { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default)
+        public Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Queue must persist then evaluate once.");
+
+        public async Task PersistAsync(MailRule rule, CancellationToken cancellationToken = default)
         {
             var active = Interlocked.Increment(ref _active);
             MaximumConcurrency = Math.Max(MaximumConcurrency, active);

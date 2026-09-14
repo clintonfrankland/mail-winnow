@@ -318,6 +318,7 @@ public sealed class RulePreviewEndpointWorkflowTests
         public int WriteCount => AddOrUpdateCount + ReplaceCount;
         public Guid? ReplacedRuleId { get; private set; }
 
+        public Task PersistAsync(MailRule rule, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task AddOrUpdateAsync(MailRule rule, CancellationToken cancellationToken = default) { AddOrUpdateCount++; return Task.CompletedTask; }
         public Task ReplaceAsync(string ownerUserId, Guid ruleId, MailRule replacement, CancellationToken cancellationToken = default) { ReplaceCount++; ReplacedRuleId = ruleId; return Task.CompletedTask; }
         public Task DeleteAsync(string ownerUserId, Guid ruleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

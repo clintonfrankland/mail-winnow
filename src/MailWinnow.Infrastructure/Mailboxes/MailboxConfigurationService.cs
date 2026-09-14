@@ -140,6 +140,11 @@ public sealed class MailboxConfigurationService(
             if (string.IsNullOrWhiteSpace(input.Password)) return new(false, "A password is required for the destination mailbox.");
             destination = new DestinationMailbox { OwnerUserId = ownerId, Username = "", Folder = "", ProtectedCredential = "" }; db.DestinationMailboxes.Add(destination);
         }
+        if (destination.Username != input.Username.Trim() || destination.Folder != input.Folder.Trim() || destination.Enabled != input.Enabled)
+        {
+            destination.InboxMessageCount = null;
+            destination.InboxCountObservedUtc = null;
+        }
         destination.Username = input.Username.Trim(); destination.Folder = input.Folder.Trim(); destination.Enabled = input.Enabled;
         if (!string.IsNullOrWhiteSpace(input.Password)) destination.ProtectedCredential = credentials.Protect(input.Password, CredentialKind.DestinationImapPassword);
         _ = localImapOptions.Value; // destination host, port and TLS are exclusively application configuration.

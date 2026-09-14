@@ -64,6 +64,60 @@ public static class RuleEvaluator
         return new RuleEvaluation(RuleOutcome.Pending, null, []);
     }
 
+    /// <summary>Index reusable match keys once per catalogue pass, not once per message/rule pair.</summary>
+    public static CompiledRuleSet Compile(IEnumerable<RuleCandidate> rules) => new(rules);
+
+    public sealed class CompiledRuleSet
+    {
+        private readonly Dictionary<string, RuleCandidate[]> senderRules;
+        private readonly Dictionary<string, RuleCandidate[]> domainRules;
+        private readonly Dictionary<string, RuleCandidate[]> subjectRules;
+        private readonly RuleCandidate[] containsRules;
+        private readonly RuleCandidate[] unnormalizedDomainRules;
+
+        internal CompiledRuleSet(IEnumerable<RuleCandidate> rules)
+        {
+            ArgumentNullException.ThrowIfNull(rules);
+            var snapshot = rules.ToArray();
+            senderRules = Index(snapshot, RuleMatchType.ExactSender, NormalizeSenderAddress);
+            domainRules = Index(snapshot, RuleMatchType.SenderDomain, NormalizeRuleDomain);
+            subjectRules = Index(snapshot, RuleMatchType.NormalizedExactSubject, NormalizeSubject);
+            containsRules = snapshot.Where(rule => rule.MatchType == RuleMatchType.SubjectContains).ToArray();
+            // Preserve canonical behavior even for legacy malformed domain rules.
+            unnormalizedDomainRules = snapshot.Where(rule => rule.MatchType == RuleMatchType.SenderDomain &&
+                NormalizeRuleDomain(rule.MatchValue) is null).ToArray();
+        }
+
+        public RuleEvaluation Evaluate(string? sender, string? subject, Guid sourceMailboxId,
+            DateTimeOffset nowUtc, RuleAction? explicitMessageDecision = null)
+        {
+            if (explicitMessageDecision is not null)
+                return RuleEvaluator.Evaluate([], sender, subject, sourceMailboxId, nowUtc, explicitMessageDecision);
+            var address = NormalizeSenderAddress(sender);
+            var at = address?.LastIndexOf('@') ?? -1;
+            var domain = at < 0 ? null : address![(at + 1)..];
+            var candidates = Lookup(senderRules, address)
+                .Concat(Lookup(domainRules, domain))
+                .Concat(domain is null ? unnormalizedDomainRules : [])
+                .Concat(Lookup(subjectRules, NormalizeSubject(subject)))
+                .Concat(containsRules);
+            // The canonical evaluator still owns time windows, account scope, precedence,
+            // explicit decisions, deterministic tie-breaking, and conflict explanations.
+            return RuleEvaluator.Evaluate(candidates, sender, subject, sourceMailboxId, nowUtc);
+        }
+
+        private static Dictionary<string, RuleCandidate[]> Index(IEnumerable<RuleCandidate> rules,
+            RuleMatchType matchType, Func<string?, string?> normalize) => rules
+            .Where(rule => rule.MatchType == matchType)
+            .Select(rule => (Rule: rule, Key: normalize(rule.MatchValue)))
+            .Where(item => item.Key is not null)
+            .GroupBy(item => item.Key!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Rule).ToArray(), StringComparer.OrdinalIgnoreCase);
+
+        private static IEnumerable<RuleCandidate> Lookup(Dictionary<string, RuleCandidate[]> rules, string? key) =>
+            key is not null && rules.TryGetValue(key, out var matches) ? matches : [];
+    }
+
     public static string NormalizeSubject(string? subject) => string.Join(' ', (subject ?? string.Empty).Normalize(NormalizationForm.FormKC).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 
     /// <summary>Returns the address from a valid, single-mailbox From header, or null when it is unavailable or ambiguous.</summary>
