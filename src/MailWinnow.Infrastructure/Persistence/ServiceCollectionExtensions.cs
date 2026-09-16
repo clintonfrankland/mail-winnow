@@ -56,6 +56,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ReviewDecisionQueue>();
         services.AddSingleton<IReviewDecisionQueue>(provider => provider.GetRequiredService<ReviewDecisionQueue>());
         services.AddScoped<IInboxReaderService, InboxReaderService>();
+        services.AddScoped<IInboxAttachmentService, InboxAttachmentService>();
         services.AddSingleton<InboxDeletionQueue>();
         services.AddSingleton<IInboxDeletionQueue>(provider => provider.GetRequiredService<InboxDeletionQueue>());
         services.AddScoped<IMessageDeliveryService, MessageDeliveryService>();

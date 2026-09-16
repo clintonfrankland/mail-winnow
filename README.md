@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.16.0.120**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.17.0.121**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -31,6 +31,14 @@ See [queue performance, freshness, restart behavior, migration, and verification
 The page stays usable for reading, showing images and deleting while sources sync. A plain-language status explains waiting, checking accounts, processing deliveries, success or failure. Lightweight owner-scoped SQL progress checks occur every three seconds for up to five minutes while the page remains open. Local IMAP headers reload initially, when delivery/cleanup progress changes, and at completion—not on every status check. Leaving the page cancels observation only; accepted work remains durable. After five minutes the page says work is still running rather than falsely reporting completion. If no enabled source accounts exist, Refresh still reloads the local inbox.
 
 Each source pass keeps the existing configured header batch limit (default 100 new messages per selected folder). A completed check is not a guarantee that an arbitrarily large source backlog has drained; remaining headers are handled by later scheduled passes. Approved mail appears in Inbox; mail needing a decision remains in Review, and blocked mail follows the existing Blocked workflow. Refresh does not bypass rules or reset retention deadlines. Removed messages are cleared from the reading pane, and late refresh results cannot reintroduce a message optimistically deleted in that page. Each local list/body read has its own service scope and timeout; source sync never executes in the browser's request/circuit. This feature uses existing source-request fields and adds no database migration.
+
+## Inbox attachment downloads
+
+Open a delivered Inbox message to see its **Attachments** list, then click a filename to download it. Ordinary file attachments and attached emails (`.eml`) are supported; inline-only body images are not listed as files. Downloads use a separate authenticated browser request, not Blazor base64/JavaScript transfer, so the inbox remains usable. There is no bulk download or source-review attachment endpoint in this release.
+
+Each link is bound to the current owner's enabled destination mailbox ID, exact folder, a fingerprint of the IMAP connection identity (not its password), message UID and UIDVALIDITY, and attachment index. Changing the destination account/folder or configured IMAP server, resetting the mailbox or deleting the message invalidates old links. Filenames are reduced to safe basenames. Responses force `Content-Disposition: attachment`, `application/octet-stream`, `nosniff` and private `no-store`; attachments are not rendered or executed by the app. Downloads do not alter messages, rules, read flags or retention deadlines.
+
+The authenticated GET route is `/inbox/attachments/{destinationMailboxId}/{uid}/{uidValidity}/{attachmentIndex}?folder=...&identity=...`. Each request has a 60-second overall limit (the existing IMAP transport has its own 30-second limit) and a **25 MiB decoded-file limit**. Larger files require a mail client. Missing/stale links return404, oversized files413, temporary failures503 and overall timeout504 with a readable explanation. The existing IMAP transport fetches the full MIME message; the decoded-file cap is not a cap on total MIME fetch size. Opening the reader lists filenames from its existing MIME fetch without decoding attachment payloads again; downloading refetches that exact message to verify current mailbox identity. No attachment cache or database migration is introduced.
 
 ## Solution layout
 
@@ -202,6 +210,7 @@ flowchart TD
     Background --> Inbox
     Background --> Review
     Inbox --> Read[Read message / choose remote images]
+    Read --> Download[Download owned attachment in browser]
     Read --> Trash[Delete to destination Trash]
     SignIn --> Review[Review pending messages / sender or subject groups]
     Review --> Preview[Open safe source preview]

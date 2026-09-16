@@ -33,6 +33,9 @@ public partial class Inbox
     private Task? _refreshTask;
     private string ViewerKey => $"{_selectedUidValidity}:{_selected?.Uid}:{_showImages}";
 
+    private string AttachmentDownloadUrl(InboxAttachment attachment) =>
+        $"inbox/attachments/{_selected!.DestinationMailboxId}/{_selected.Uid}/{_selectedUidValidity}/{attachment.Index}?folder={Uri.EscapeDataString(_selected.DestinationFolder!)}&identity={Uri.EscapeDataString(_selected.AttachmentMailboxIdentity!)}";
+
     protected override async Task OnInitializedAsync()
     {
         _user = (await AuthenticationStateTask).User;

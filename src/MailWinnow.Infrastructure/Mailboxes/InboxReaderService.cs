@@ -13,7 +13,9 @@ namespace MailWinnow.Infrastructure.Mailboxes;
 public sealed record InboxMessageSummary(uint Uid, uint UidValidity, string From, string Subject, DateTimeOffset Date,
     string? RetentionLabel = null);
 public sealed record InboxMessageContent(uint Uid, string From, string To, string Subject, DateTimeOffset Date,
-    string HtmlBody, string HtmlBodyWithRemoteImages, bool HasRemoteImages);
+    string HtmlBody, string HtmlBodyWithRemoteImages, bool HasRemoteImages,
+    IReadOnlyList<InboxAttachment>? Attachments = null, Guid? DestinationMailboxId = null, string? DestinationFolder = null,
+    string? AttachmentMailboxIdentity = null);
 public sealed record InboxLoadResult<T>(bool Succeeded, T? Value, string? Error = null);
 
 public interface IInboxReaderService
@@ -87,7 +89,7 @@ public sealed partial class InboxReaderService(
         var header = await imap.FetchHeadersAsync(connection, destination.Folder, [uid], uidValidity, cancellationToken);
         var result = await imap.FetchMessageAsync(connection, destination.Folder, uid, uidValidity, cancellationToken);
         if (!result.Succeeded || result.Value is null) return new(false, null, result.Error ?? "Unable to read the message.");
-        var message = result.Value;
+        using var message = result.Value;
         var html = !string.IsNullOrWhiteSpace(message.HtmlBody) ? message.HtmlBody : PlainTextHtml(message.TextBody ?? string.Empty);
         html = ResolveEmbeddedImages(message, html);
         var sanitized = Sanitize(html);
@@ -96,7 +98,9 @@ public sealed partial class InboxReaderService(
             ? ResolveDate(fetchedHeader)
             : message.Date == default ? DateTimeOffset.UnixEpoch : message.Date;
         return new(true, new(uid, message.From.ToString(), message.To.ToString(), message.Subject ?? "(no subject)", date,
-            WrapDocument(BlockRemoteImages(sanitized), false), WrapDocument(sanitized, true), hasRemoteImages));
+            WrapDocument(BlockRemoteImages(sanitized), false), WrapDocument(sanitized, true), hasRemoteImages,
+            InboxAttachmentService.DescribeAttachments(message), destination.Id, destination.Folder,
+            InboxAttachmentService.MailboxIdentity(destination.Id, destination.Username, destination.Folder, options.Value)));
     }
 
     private async Task<DestinationMailbox?> DestinationAsync(ClaimsPrincipal user, CancellationToken token)

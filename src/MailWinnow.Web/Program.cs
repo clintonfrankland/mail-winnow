@@ -63,6 +63,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapAccountEndpoints();
 app.MapMailboxEndpoints();
+app.MapInboxAttachmentEndpoints();
 app.MapReviewEndpoints();
 app.MapAdministrationEndpoints();
 app.MapGet("/healthz", async (MailWinnowDbContext database, CancellationToken cancellationToken) =>

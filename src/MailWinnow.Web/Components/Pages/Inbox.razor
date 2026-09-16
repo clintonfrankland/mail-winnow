@@ -38,7 +38,21 @@
                 }
                 <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_busy" @onclick="DeleteSelectedAsync" aria-label="Delete this email"><svg class="button-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></svg><span>Delete</span></button>
             </div>
-            <header class="reader-header"><div class="reader-heading"><h2>@_selected.Subject</h2><div><strong>From:</strong> @_selected.From</div><div><strong>To:</strong> @_selected.To</div><time>@_selected.Date.LocalDateTime.ToString("f")</time></div></header>
+            <header class="reader-header"><div class="reader-heading"><h2>@_selected.Subject</h2><div><strong>From:</strong> @_selected.From</div><div><strong>To:</strong> @_selected.To</div><time>@_selected.Date.LocalDateTime.ToString("f")</time></div>
+                @if (_selected.Attachments is { Count: > 0 } && _selected.DestinationMailboxId is not null && _selectedUidValidity is not null && _selected.DestinationFolder is not null && _selected.AttachmentMailboxIdentity is not null)
+                {
+                    <section class="message-attachments" aria-label="Attachments">
+                        <strong>Attachments (@_selected.Attachments.Count)</strong>
+                        <ul>
+                            @foreach (var attachment in _selected.Attachments)
+                            {
+                                <li><a href="@AttachmentDownloadUrl(attachment)" download="@attachment.FileName" target="_blank" rel="noopener noreferrer" data-enhance-nav="false" aria-label="@($"Download {attachment.FileName}")">@attachment.FileName</a></li>
+                            }
+                        </ul>
+                        <small>Click a file to download. Up to 25 MiB per file.</small>
+                    </section>
+                }
+            </header>
             <iframe class="message-body" @key="ViewerKey" title="Email message" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" srcdoc="@(_showImages ? _selected.HtmlBodyWithRemoteImages : _selected.HtmlBody)"></iframe>
         }
     </article>

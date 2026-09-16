@@ -143,3 +143,14 @@ Generated migration designers and model snapshot accompany the named migrations;
 | [`tools/MailWinnow.DbMigrator/Program.cs`](../tools/MailWinnow.DbMigrator/Program.cs) | Program |
 | [`tools/MailWinnow.DeploymentProbe/Program.cs`](../tools/MailWinnow.DeploymentProbe/Program.cs) | Program |
 | [`tools/MailWinnow.SqlProvisioner/Program.cs`](../tools/MailWinnow.SqlProvisioner/Program.cs) | Program |
+
+## Inbox attachment downloads (1.17.0.121)
+
+| File | Purpose |
+| --- | --- |
+| [`src/MailWinnow.Infrastructure/Mailboxes/InboxAttachmentService.cs`](../src/MailWinnow.Infrastructure/Mailboxes/InboxAttachmentService.cs) | Owner/folder/UID-bound attachment selection, safe filenames and bounded MIME decoding. |
+| [`src/MailWinnow.Web/Security/InboxAttachmentEndpoints.cs`](../src/MailWinnow.Web/Security/InboxAttachmentEndpoints.cs) | Authenticated browser download with forced attachment headers, cancellation and readable failures. |
+| [`tests/MailWinnow.Tests/Mailboxes/InboxAttachmentTests.cs`](../tests/MailWinnow.Tests/Mailboxes/InboxAttachmentTests.cs) | MIME content, ownership, stale-message, filename and size-limit regression tests. |
+| [`tests/MailWinnow.Tests/Mailboxes/InboxAttachmentEndpointTests.cs`](../tests/MailWinnow.Tests/Mailboxes/InboxAttachmentEndpointTests.cs) | Real HTTP routing/authentication, byte/header and error-status tests. |
+
+The existing `InboxReaderService.cs`, `Inbox.razor`, `Inbox.razor.cs`, `Inbox.razor.css` and `InboxRefreshInteractionTests.cs` additionally cover attachment metadata, accessible browser links and selection/deletion behavior.

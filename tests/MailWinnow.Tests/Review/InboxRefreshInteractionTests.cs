@@ -139,6 +139,36 @@ public sealed class InboxRefreshInteractionTests : BunitContext
         Assert.Contains("Message 2", page.Find(".reader-heading").TextContent);
     }
 
+    [Fact]
+    public async Task AttachmentsUseBrowserDownloadsBoundToTheSelectedMessageAndDoNotBlockReading()
+    {
+        var state = Configure();
+        state.Messages = [state.Messages[0], new(2, 43, "Other", "Message 2", DateTimeOffset.UtcNow)];
+        state.Attachments = [new(0, "invoice & receipt.pdf", "application/pdf"), new(1, "photo.png", "image/png")];
+        var page = Render<Inbox>();
+        await page.FindAll(".message-row")[0].ClickAsync(new());
+        var links = page.FindAll(".message-attachments a");
+        Assert.Equal(2, links.Count);
+        Assert.Equal($"inbox/attachments/{state.DestinationMailboxId}/1/42/0?folder=Inbox%2FReceipts&identity=test-stamp", links[0].GetAttribute("href"));
+        Assert.Equal("invoice & receipt.pdf", links[0].GetAttribute("download"));
+        Assert.Equal("false", links[0].GetAttribute("data-enhance-nav"));
+        Assert.Equal("_blank", links[0].GetAttribute("target"));
+        Assert.False(page.Find("button[aria-label='Delete this email']").HasAttribute("disabled"));
+        await page.FindAll(".message-row")[1].ClickAsync(new());
+        Assert.Contains("/2/43/0?", page.Find(".message-attachments a").GetAttribute("href"));
+        await page.Find("button[aria-label='Delete this email']").ClickAsync(new());
+        Assert.DoesNotContain("/2/43/", page.Markup);
+    }
+
+    [Fact]
+    public async Task MessagesWithoutAttachmentsShowNoDownloadSection()
+    {
+        Configure();
+        var page = Render<Inbox>();
+        await page.Find(".message-row").ClickAsync(new());
+        Assert.Empty(page.FindAll(".message-attachments"));
+    }
+
     private FixtureState Configure()
     {
         var state = new FixtureState();
@@ -161,6 +191,8 @@ public sealed class InboxRefreshInteractionTests : BunitContext
         public TaskCompletionSource<MailboxOperationResult>? NextDeletion;
         public CancellationToken StatusToken;
         public int Requests, StatusCalls, ListCalls, ReadCalls, Deletions, ReadersCreated, ReadersDisposed;
+        public Guid DestinationMailboxId = Guid.NewGuid();
+        public IReadOnlyList<InboxAttachment> Attachments = [];
     }
 
     private sealed class ScopedReader : IInboxReaderService, IDisposable
@@ -177,7 +209,7 @@ public sealed class InboxRefreshInteractionTests : BunitContext
         public Task<InboxLoadResult<InboxMessageContent>> ReadAsync(ClaimsPrincipal user, uint uid, uint uidValidity, CancellationToken cancellationToken = default)
         {
             _state.ReadCalls++;
-            return Task.FromResult(new InboxLoadResult<InboxMessageContent>(true, new(uid, "Sender", "Owner", "Message " + uid, DateTimeOffset.UtcNow, "<p>Message</p>", "<p>Message</p>", false)));
+            return Task.FromResult(new InboxLoadResult<InboxMessageContent>(true, new(uid, "Sender", "Owner", "Message " + uid, DateTimeOffset.UtcNow, "<p>Message</p>", "<p>Message</p>", false, _state.Attachments, _state.DestinationMailboxId, "Inbox/Receipts", "test-stamp")));
         }
         public void Dispose() => _state.ReadersDisposed++;
     }

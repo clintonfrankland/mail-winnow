@@ -23,7 +23,7 @@ public interface IImapConnectionService
 public sealed record ImapConnectionSettings(string Host, int Port, bool UseSsl, string Username, string Password, TimeSpan? Timeout = null);
 public sealed record ImapMessageHeader(uint Uid, string? MessageId, DateTimeOffset? Date, string? From, string? Sender, string? ReplyTo, string? To, string? Cc, string? Subject, string? AuthenticationResults, DateTimeOffset? InternalDate = null);
 public sealed record ImapFolderSnapshot(uint UidValidity, IReadOnlyList<uint> Uids);
-public enum ImapFailureKind { None, Authentication, Connection, Timeout, MissingFolder, UidValidityChanged, Throttled, Transient, Unexpected }
+public enum ImapFailureKind { None, Authentication, Connection, Timeout, MissingFolder, UidValidityChanged, Throttled, Transient, Unexpected, MissingMessage }
 public sealed record ImapOperationResult<T>(bool Succeeded, T? Value, ImapFailureKind FailureKind = ImapFailureKind.None, string? Error = null)
 {
     public static ImapOperationResult<T> Success(T value) => new(true, value);
@@ -111,6 +111,7 @@ public sealed class ImapConnectionService(IImapClientSessionFactory? sessions = 
         var kind = exception switch
         {
             UidValidityChangedException => ImapFailureKind.UidValidityChanged,
+            MessageNotFoundException => ImapFailureKind.MissingMessage,
             AuthenticationException => ImapFailureKind.Authentication,
             FolderNotFoundException => ImapFailureKind.MissingFolder,
             TimeoutException => ImapFailureKind.Timeout,
@@ -121,6 +122,7 @@ public sealed class ImapConnectionService(IImapClientSessionFactory? sessions = 
         };
         var message = kind switch
         {
+            ImapFailureKind.MissingMessage => "The requested IMAP message no longer exists.",
             ImapFailureKind.Authentication => "IMAP authentication was rejected.", ImapFailureKind.MissingFolder => "The requested IMAP folder does not exist.",
             ImapFailureKind.UidValidityChanged => "The IMAP folder was reset; synchronization must restart.", ImapFailureKind.Timeout => "The IMAP operation timed out.",
             ImapFailureKind.Throttled => "The IMAP provider temporarily throttled this mailbox.", ImapFailureKind.Transient => "A temporary IMAP network failure occurred.",
