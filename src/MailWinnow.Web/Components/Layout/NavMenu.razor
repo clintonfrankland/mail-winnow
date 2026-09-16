@@ -17,6 +17,8 @@
                 <div class="nav-item"><NavLink class="nav-link" href="review/sender"><span class="nav-icon" aria-hidden="true">☷</span> Review - Sender @if (CountState.ReviewSenderCount > 0) { <span class="sidebar-count" aria-label="@CountState.ReviewSenderCount pending senders">@CountState.ReviewSenderCount</span> }</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="rules"><span class="nav-icon" aria-hidden="true">⚙</span> Rules</NavLink></div>
                 <div class="nav-item"><NavLink class="nav-link" href="mailboxes"><span class="nav-icon" aria-hidden="true">✉</span> Mailboxes</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="outbox"><span class="nav-icon" aria-hidden="true">↗</span> Drafts &amp; Outbox</NavLink></div>
+                <div class="nav-item"><NavLink class="nav-link" href="sending"><span class="nav-icon" aria-hidden="true">⚙</span> Sending accounts</NavLink></div>
                 <div class="app-version" aria-label="Mail Winnow version @AppVersion">v@(AppVersion)</div>
                 <div class="nav-item nav-signout"><form method="post" action="/auth/logout"><AntiforgeryToken /><button class="nav-link" type="submit"><span class="nav-icon" aria-hidden="true">↪</span> Sign out</button></form></div>
             </Authorized>

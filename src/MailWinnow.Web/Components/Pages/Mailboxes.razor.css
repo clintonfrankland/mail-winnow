@@ -1,17 +1,12 @@
 .mailbox-section { margin-top: 2rem; }
 .section-heading { align-items: flex-start; display: flex; gap: 1rem; justify-content: space-between; margin-bottom: 1rem; }
 .section-heading h2 { margin-bottom: .25rem; }
-.mailbox-editor > summary { list-style: none; white-space: nowrap; }
-.mailbox-editor > summary::-webkit-details-marker { display: none; }
-.add-source-editor[open] { width: min(100%, 34rem); }
-.source-form, .destination-form { gap: .75rem; min-width: min(30rem, calc(100vw - 4rem)); }
+.source-form, .destination-form { display: flex; flex-direction: column; gap: .75rem; min-width: 0; }
 .form-label { font-weight: 600; margin: 0; }
 .form-label .form-control { font-weight: 400; margin-top: .25rem; }
 .mailbox-list { border: 1px solid var(--bs-border-color); border-radius: .5rem; }
 .mailbox-list thead th { background: var(--bs-tertiary-bg); white-space: nowrap; }
 .source-actions { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: flex-end; min-width: 15rem; }
-.row-editor { position: relative; }
-.row-editor[open] form { position: absolute; right: 0; top: calc(100% + .35rem); width: 32rem; z-index: 10; }
 .folder-selection td { background: var(--bs-tertiary-bg); }
 .folder-options { display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }
 .empty-state { background: var(--bs-tertiary-bg); border: 1px dashed var(--bs-border-color); border-radius: .5rem; padding: 1.5rem; }
@@ -25,11 +20,15 @@
 .destination-values dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
 @media (max-width: 767.98px) {
     .section-heading { align-items: stretch; flex-direction: column; }
-    .add-source-editor[open] { width: 100%; }
     .destination-values { grid-template-columns: 1fr 1fr; }
-    .row-editor[open] form { position: fixed; inset: 1rem; max-height: calc(100vh - 2rem); overflow: auto; width: auto; }
     .source-form, .destination-form { min-width: 0; width: 100%; }
     .destination-status { flex-direction: column; }
     .source-actions { justify-content: flex-start; min-width: 0; }
 }
 @media (max-width: 520px) { .destination-values { grid-template-columns: 1fr; } }
+
+.mailbox-dialog { background: var(--bs-body-bg, white); color: var(--bs-body-color, #212529); border: 1px solid var(--bs-border-color, #ccc); border-radius: .75rem; box-shadow: 0 1rem 4rem #0005; margin: auto; padding: 0; width: min(36rem, calc(100vw - 2rem)); max-width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; }
+.mailbox-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.dialog-heading { align-items: center; display: flex; gap: 1rem; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--bs-border-color, #ccc); }
+.dialog-heading h3 { margin: 0; overflow-wrap: anywhere; }
+.mailbox-dialog .card-body { padding: 1rem; }

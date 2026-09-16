@@ -1,4 +1,5 @@
 using MailWinnow.Infrastructure.Security;
+using MailWinnow.Infrastructure.Outgoing;
 using MailWinnow.Infrastructure.Mailboxes;
 using MailWinnow.Infrastructure.Rules;
 using Microsoft.AspNetCore.Identity;
@@ -67,6 +68,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMailSyncQueue, MailSyncQueue>();
         services.AddSingleton<IInboxRefreshService, InboxRefreshService>();
         services.AddSingleton<MailSyncWakeSignal>();
+        services.AddSingleton<OutgoingPayloadProtection>();
+        services.AddSingleton<IOutgoingMailService, OutgoingMailService>();
+        services.AddSingleton<IOutgoingTransport>(provider => new SmtpOutgoingTransport());
+        services.AddSingleton<OutgoingQueueProcessor>();
         return services;
     }
 }

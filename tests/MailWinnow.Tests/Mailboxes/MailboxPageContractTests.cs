@@ -8,7 +8,7 @@ public sealed class MailboxPageContractTests
         var source = File.ReadAllText(FindPage());
 
         Assert.Contains("id=\"source-mailboxes-heading\">Source mailboxes", source);
-        Assert.Contains(">Add source</summary>", source);
+        Assert.Contains(">Add source</button>", source);
         Assert.Contains("@foreach (var source in _sources)", source);
         Assert.Contains("id=\"destination-mailbox-heading\">Destination mailbox", source);
         Assert.Contains("Credential stored", source);
@@ -23,8 +23,9 @@ public sealed class MailboxPageContractTests
     {
         var source = File.ReadAllText(FindPage());
 
-        Assert.Contains("<details class=\"mailbox-editor add-source-editor\">", source);
-        Assert.Contains(">Edit destination</summary>", source);
+        Assert.Contains("<dialog id=\"add-source-dialog\"", source);
+        Assert.DoesNotContain("<details", source);
+        Assert.Contains(">Edit destination</button>", source);
         Assert.Contains("Leave blank to keep current", source);
     }
 

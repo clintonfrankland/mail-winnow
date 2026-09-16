@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.17.0.121**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.18.0.122**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -11,8 +11,9 @@ flowchart LR
     User[Household user] --> Web[Blazor Web: durable enqueue and SQL badge reads]
     Admin[Administrator] --> Web
     Web --> SQL[(SQL Server: rules, catalogue, queue, count snapshots)]
-    Worker[Worker: queue, evaluation, sync, count refresh] --> SQL
+    Worker[Worker: queue, evaluation, sync, SMTP outbox, count refresh] --> SQL
     Worker --> Source[Source IMAP]
+    Worker --> SMTP[Configured outgoing SMTP server over TLS]
     Worker --> Destination[Private destination IMAPS]
     Web -->|Explicit message list/preview only| Destination
     Migrator[Explicit deployment migrator] --> SQL
@@ -39,6 +40,24 @@ Open a delivered Inbox message to see its **Attachments** list, then click a fil
 Each link is bound to the current owner's enabled destination mailbox ID, exact folder, a fingerprint of the IMAP connection identity (not its password), message UID and UIDVALIDITY, and attachment index. Changing the destination account/folder or configured IMAP server, resetting the mailbox or deleting the message invalidates old links. Filenames are reduced to safe basenames. Responses force `Content-Disposition: attachment`, `application/octet-stream`, `nosniff` and private `no-store`; attachments are not rendered or executed by the app. Downloads do not alter messages, rules, read flags or retention deadlines.
 
 The authenticated GET route is `/inbox/attachments/{destinationMailboxId}/{uid}/{uidValidity}/{attachmentIndex}?folder=...&identity=...`. Each request has a 60-second overall limit (the existing IMAP transport has its own 30-second limit) and a **25 MiB decoded-file limit**. Larger files require a mail client. Missing/stale links return404, oversized files413, temporary failures503 and overall timeout504 with a readable explanation. The existing IMAP transport fetches the full MIME message; the decoded-file cap is not a cap on total MIME fetch size. Opening the reader lists filenames from its existing MIME fetch without decoding attachment payloads again; downloading refetches that exact message to verify current mailbox identity. No attachment cache or database migration is introduced.
+
+## Replies, drafts, and outgoing mail
+
+Open a local inbox message and choose **Reply** or **Reply all**. The reusable plain-text composer supports editable To/Cc/Bcc, From, subject, quoted text, and new attachments. Original attachments are not automatically included. Reply respects `Reply-To`; Reply all adds the original To/Cc recipients, removes configured self addresses, and never copies original Bcc. Threading headers are preserved from the original message. A new-message Compose entry point is reserved for a later release.
+
+Configure **Sending accounts** before sending: enter your provider's SMTP host, TLS mode (required STARTTLS or implicit TLS), port, authentication, and explicit From address. Enable the account when ready. Source-mailbox associations organize sending accounts, but existing delivery records do not securely bind the historic destination login. Choose From explicitly for replies; the app will not guess from recipient headers or old mailbox UIDs. An IMAP login is not assumed to be a valid SMTP identity. Passwords are entered only in the signed-in application and are never displayed back. Select whether the provider saves Sent copies or Mail Winnow should append a copy to the configured local Sent folder.
+
+Drafts are saved durably with revision checks and can be reopened from **Drafts & Outbox**. Switching inbox messages does not replace an open draft. **Send** commits an immutable outbox entry and returns without waiting for SMTP; only Worker submits mail. Duplicate submission of the same draft cannot create another outbox message. Required recipient/identity validation runs before acceptance. You can upload up to 20 files, at most 25 MiB each and 30 MiB total, within a 45 MiB encoded-message limit.
+
+The outbox distinguishes queued, sending, sent, failed, and **outcome unknown**. “Sent” means the SMTP server accepted the submission, not that every recipient received it. If the connection or worker stops around submission, Mail Winnow does not automatically resend uncertain mail: check the provider before deciding what to do. Safe pre-submission failures can be retried explicitly. Saving a local Sent copy is a separate stage; a failure there never resubmits SMTP. An ambiguous IMAP append is shown as unconfirmed and is not automatically repeated, to avoid duplicate archive copies.
+
+Outbound content is intentionally separate from the inbound header-only catalogue. Draft bodies, attachment bytes, and immutable MIME/settings snapshots are protected using the shared Data Protection key ring. Retain those keys with database backups. Editable drafts remain until discarded. Successfully sent outbox records with a saved Sent copy (or an explicitly configured provider-managed copy) are removed after 30 days, together with their locked draft/upload duplicates. Failed and uncertain outcomes are not automatically removed. Cleanup never deletes mail from the local Sent folder or changes incoming-message retention. Uploads across editable drafts are capped at 200 MiB per owner; discarding an editable draft removes its uploads. Do not include payloads or SMTP credentials in diagnostics.
+
+For the real-browser dialog regression, render `MailboxDialogRenderedTests` with `MAILBOX_DIALOG_FIXTURE_PATH` set to a temporary HTML path, then run `node scripts/check-mailbox-dialogs.mjs /path/to/playwright/index.mjs /path/to/fixture.html`. The script uses installed Chromium (override `CHROMIUM_PATH` if needed) and never opens production mailboxes.
+
+## Mailbox editing dialogs
+
+Source and destination **Edit** forms open as native top-layer dialogs, outside the scrolling table. They remain above other page content, fit small screens with internal scrolling, support Escape/Close, and return focus to the initiating button. Password fields clear on close. The forms retain normal server-rendered POST and antiforgery handling; JavaScript only controls dialog presentation.
 
 ## Solution layout
 
@@ -108,7 +127,7 @@ Use separate passwords for production and development. Store the resulting appli
 
 ## Credential protection
 
-Mailbox passwords, app passwords, destination passwords, and future OAuth refresh tokens must be stored only through `ICredentialProtectionService`. The abstraction uses purpose-separated ASP.NET Core Data Protection payloads and never exposes a read/display model. A missing key-ring configuration or mount fails host startup, while corrupt payloads and unavailable keys raise a safe `CredentialProtectionException` without including plaintext.
+Mailbox passwords, app passwords, destination passwords, SMTP passwords, and future OAuth refresh tokens must be stored only through `ICredentialProtectionService`. The abstraction uses purpose-separated ASP.NET Core Data Protection payloads and never exposes a read/display model. A missing key-ring configuration or mount fails host startup, while corrupt payloads and unavailable keys raise a safe `CredentialProtectionException` without including plaintext.
 
 Both Web and Worker read `DataProtection:KeysPath` (`DataProtection__KeysPath` as an environment variable) and use the fixed `MailWinnow` application discriminator. In containers, the deployment Compose configuration mounts the same named volume into both services. Back up this volume with the database: losing its key files makes saved credentials intentionally undecryptable.
 
@@ -173,9 +192,10 @@ The credential-safe `MailWinnow.DeploymentProbe` performs those database, DNS, T
 | .NET / ASP.NET Core / Blazor | 10.0 | Web, worker, and tooling runtime |
 | Entity Framework Core | 10.0.10 | SQL Server persistence and explicit migrations |
 | SQL Server | Runtime supplied by Home Helm | Durable catalogue, queues, snapshots and identity |
-| MailKit / MimeKit | MailKit 4.17.0 (resolved MIME dependency) | IMAP connection, fetching, delivery and MIME parsing |
+| MailKit / MimeKit | MailKit 4.17.0 (resolved MIME dependency) | IMAP connection, fetching, delivery, SMTP submission and MIME parsing |
 | Docker Compose / nginx | Host runtime / nginx 1.29 | Separate Web/Worker services and existing health-checked route cutover |
 | xUnit / bUnit | 2.9.3 / 2.9.0 | Unit, SQL-fixture and rendered UI regressions |
+| Playwright / Chromium (optional browser regression) | Playwright 1.63.0 / installed Chromium | Local rendered mailbox-dialog fixture; not a production dependency |
 
 Exact per-project package versions, project references, and the source file inventory are in [source and dependency reference](docs/source-reference.md).
 
@@ -191,6 +211,10 @@ Exact per-project package versions, project references, and the source file inve
 | `MessageDecisions` | Explicit per-message approve/delete/pending overrides |
 | `ReviewDecisionWorkItems` | Durable decisions, active idempotency key, retry/lease/completion evidence |
 | `MessageDeliveries` | Destination append and source-deletion idempotency/retention receipts |
+| `SendingAccounts` | Owner-scoped From/source mapping, protected SMTP credentials and Sent-copy policy |
+| `MessageDrafts` | Protected editable reply content, optimistic revision and queued outbox identity |
+| `DraftAttachments` | Bounded protected uploads attached to an owned draft |
+| `OutgoingMessages` | Immutable protected MIME/settings, durable SMTP state and fenced worker lease |
 | `AuditEvents` | Metadata-only administrative/rule/decision audit trail |
 | `WorkerHeartbeats` | Worker liveness and scheduling observations |
 | Identity tables (`AspNetUsers`, roles, claims, logins, tokens, user roles) | Household authentication and authorization |
@@ -210,6 +234,16 @@ flowchart TD
     Background --> Inbox
     Background --> Review
     Inbox --> Read[Read message / choose remote images]
+    Read --> Reply[Reply / Reply all]
+    Reply --> Draft[Shared composer and saved draft]
+    Draft --> Outbox[Durable Send acceptance]
+    SignIn --> Saved[Drafts and Outbox]
+    Saved --> Draft
+    Saved --> RetrySend[Retry only a confirmed failure]
+    RetrySend --> Outbox
+    Outbox --> SMTP[Worker SMTP submission]
+    SMTP --> Sent[Separate Sent-copy handling]
+    SignIn --> Sending[Configure owned sending accounts]
     Read --> Download[Download owned attachment in browser]
     Read --> Trash[Delete to destination Trash]
     SignIn --> Review[Review pending messages / sender or subject groups]

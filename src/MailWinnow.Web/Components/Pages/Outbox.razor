@@ -1,0 +1,37 @@
+@page "/outbox"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using MailWinnow.Infrastructure.Outgoing
+@using MailWinnow.Web.Components.Mail
+@implements IAsyncDisposable
+
+<PageTitle>Drafts &amp; Outbox</PageTitle>
+<header class="page-heading"><h1>Drafts &amp; Outbox</h1><p>Sent means the sending server accepted your message, not that the recipient has read or received it.</p></header>
+@if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+<button type="button" class="btn btn-outline-secondary" disabled="@_loading" @onclick="LoadAsync">Refresh status</button>
+@if (_editing is not null) { <MessageComposer @key="_editing.Id" Draft="_editing" Closed="CloseDraftAsync" /> }
+<section aria-label="Saved drafts" class="outbox-section">
+<h2>Drafts</h2>
+@if (_drafts.Count == 0) { <p>No saved drafts. Open an inbox message and choose Reply to start.</p> }
+@foreach (var draft in _drafts)
+{
+    <article class="outbox-row"><div><strong>@(string.IsNullOrWhiteSpace(draft.Subject) ? "(No subject)" : draft.Subject)</strong><div>Saved @draft.UpdatedUtc.LocalDateTime.ToString("g")</div></div>
+        <button type="button" class="btn btn-outline-primary" disabled="@(_editing is not null || _opening)" @onclick="() => OpenDraftAsync(draft.Id)">Open draft</button>
+    </article>
+}
+</section>
+<section aria-label="Outgoing messages" class="outbox-section">
+<h2>Outbox</h2>
+<p class="text-body-secondary">Completed records with a saved or provider-managed Sent copy are kept here for 30 days. Failed or uncertain records are retained. Cleanup does not remove email from your Sent folder.</p>
+@if (_messages.Count == 0) { <p>No outgoing messages yet.</p> }
+@foreach (var message in _messages)
+{
+    <article class="outbox-row">
+        <div><strong>@(string.IsNullOrWhiteSpace(message.Subject) ? "(No subject)" : message.Subject)</strong><p class="outbox-state">@StateLabel(message.State)</p><p>@StateHelp(message)</p>
+        @if (message.SentUtc is { } sent) { <small>Accepted @sent.LocalDateTime.ToString("g")</small> }
+        @if (!string.IsNullOrWhiteSpace(message.SentCopyStatus)) { <p>@SentCopyHelp(message.SentCopyStatus)</p> }
+        </div>
+        @if (message.CanRetry) { <button type="button" class="btn btn-outline-primary" disabled="@_retrying" @onclick="() => RetryAsync(message.Id)">@(message.State == OutgoingState.Sent ? "Retry Sent copy" : "Retry sending")</button> }
+    </article>
+}
+</section>

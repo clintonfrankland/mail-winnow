@@ -5,3 +5,5 @@
 .reader-actions{display:flex;align-items:center;justify-content:flex-end;gap:.5rem;margin-bottom:1rem}.reader-actions .btn{display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap}.reader-actions .button-icon{width:1rem;height:1rem;flex:0 0 1rem}.reader-header{display:block}.reader-heading{min-width:0}
 .message-row-topline{align-items:center;display:flex!important;gap:.5rem;min-width:0}.message-row-topline .message-sender{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message-row-topline .retention-badge{background:var(--primary-soft);border-radius:999px;color:var(--primary);flex:0 0 auto;font-size:.7rem;line-height:1;padding:.25rem .45rem;width:auto}
 .message-attachments{margin-top:.8rem;padding:.7rem;background:var(--primary-soft);border-radius:8px;max-height:180px;overflow:auto}.message-attachments ul{list-style:none;margin:.4rem 0;padding:0;display:flex;flex-wrap:wrap;gap:.4rem .8rem}.message-attachments a{display:inline-block;overflow-wrap:anywhere;padding:.2rem 0}.message-attachments small{color:var(--muted)}
+
+.reader-actions{flex-wrap:wrap}

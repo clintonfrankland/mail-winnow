@@ -1,0 +1,67 @@
+@using MailWinnow.Infrastructure.Outgoing
+@implements IAsyncDisposable
+
+<NavigationLock ConfirmExternalNavigation="@IsDirty" OnBeforeInternalNavigation="BeforeNavigationAsync" />
+<section class="message-composer" aria-label="Reply composer" tabindex="-1" @ref="_composerPanel">
+    <header><h2>Reply</h2><a href="outbox">Drafts &amp; Outbox</a></header>
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    @if (_queued is not null)
+    {
+        <div role="status"><strong>@AcceptanceTitle(_queued.State)</strong> @AcceptanceDetail(_queued.State)</div>
+        <p><a href="outbox">Follow delivery status in Outbox</a></p>
+        <button type="button" class="btn btn-secondary" @onclick="CloseAsync">Close</button>
+    }
+    else if (_draft?.OutboxId is not null)
+    {
+        <p role="status">This draft has already been queued. <a href="outbox">Check its current Outbox status</a> before sending another message.</p>
+        <button type="button" class="btn btn-secondary" @onclick="CloseAsync">Close</button>
+    }
+    else if (_draft is not null)
+    {
+        <fieldset disabled="@_busy">
+            <legend class="visually-hidden">Reply details</legend>
+            <label>From
+                <select class="form-select" aria-label="From" value="@_sendingAccountId" @onchange="SenderChanged">
+                    <option value="">Choose a sending account</option>
+                    @foreach (var account in _accounts.Where(account => account.Enabled))
+                    { <option value="@account.Id">@account.DisplayName &lt;@account.FromAddress&gt;</option> }
+                </select>
+            </label>
+            @if (_sendingAccountId is null) { <p class="composer-help">Choose the address to send from. <a href="sending">Set up a sending account</a> if needed; your draft will be saved before leaving.</p> }
+            <label>To<input class="form-control" aria-label="To" value="@_to" @oninput="e => Edit(() => _to = Text(e))" /></label>
+            <details open="@(!string.IsNullOrWhiteSpace(_cc) || !string.IsNullOrWhiteSpace(_bcc))">
+                <summary>Cc / Bcc</summary>
+                <label>Cc<input class="form-control" aria-label="Cc" value="@_cc" @oninput="e => Edit(() => _cc = Text(e))" /></label>
+                <label>Bcc<input class="form-control" aria-label="Bcc" value="@_bcc" @oninput="e => Edit(() => _bcc = Text(e))" /></label>
+            </details>
+            <small class="composer-help">Separate multiple addresses with commas.</small>
+            <label>Subject<input class="form-control" aria-label="Subject" value="@_subject" @oninput="e => Edit(() => _subject = Text(e))" /></label>
+            <label>Message<textarea class="form-control composer-body" aria-label="Message" rows="12" maxlength="@OutgoingMessagePolicies.MaxBodyCharacters" value="@_body" @oninput="e => Edit(() => _body = Text(e))"></textarea></label>
+            <small class="composer-help">Plain text. The quoted original below your reply is editable and can be removed. Original attachments are not included.</small>
+            <label>Add attachments<InputFile OnChange="AddFilesAsync" multiple aria-label="Add attachments" /></label>
+            <small class="composer-help">Up to 20 attachments, 25 MiB per file and 30 MiB total. The encoded message must fit within 45 MiB.</small>
+            @if (_draft.Attachments.Count > 0)
+            {
+                <ul class="composer-attachments">
+                    @foreach (var attachment in _draft.Attachments)
+                    { <li>@attachment.FileName (@FormatLength(attachment.Length)) <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="@($"Remove {attachment.FileName}")" @onclick="() => RemoveFileAsync(attachment.Id)">Remove</button></li> }
+                </ul>
+            }
+        </fieldset>
+        <p role="status" aria-live="polite">@(_busy ? "Saving your request…" : IsDirty ? "Unsaved changes" : _status ?? "Draft saved")</p>
+        <div class="composer-actions">
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _sendingAccountId is null)" @onclick="SendAsync">Send</button>
+            <button type="button" class="btn btn-outline-primary" disabled="@_busy" @onclick="() => SaveAsync(false)">Save Draft</button>
+            <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="() => SaveAsync(true)">Save and close</button>
+            <button type="button" class="btn btn-outline-danger" disabled="@_busy" @onclick="() => _confirmDiscard = true">Discard</button>
+        </div>
+        @if (_confirmDiscard)
+        {
+            <div class="discard-confirm" role="alert">
+                <p>Discard this draft and its attachments? This cannot be undone.</p>
+                <button type="button" class="btn btn-danger" disabled="@_busy" @onclick="DiscardAsync">Discard draft permanently</button>
+                <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="() => _confirmDiscard = false">Keep editing</button>
+            </div>
+        }
+    }
+</section>

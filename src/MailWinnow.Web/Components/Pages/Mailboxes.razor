@@ -14,21 +14,7 @@
             <h2 id="source-mailboxes-heading">Source mailboxes</h2>
             <p class="text-body-secondary mb-0">Add one or more production mailboxes to monitor.</p>
         </div>
-        <details class="mailbox-editor add-source-editor">
-            <summary class="btn btn-primary">Add source</summary>
-            <form method="post" action="/mailboxes/source/save" class="card card-body mt-3 source-form">
-                <h3 class="h5">Add source mailbox</h3><AntiforgeryToken />
-                <label class="form-label">Display name<input class="form-control" name="DisplayName" required /></label>
-                <label class="form-label">IMAP host<input class="form-control" name="Host" required /></label>
-                <label class="form-label">Port<input class="form-control" name="Port" type="number" min="1" max="65535" value="993" required /></label>
-                <label class="form-label">Username<input class="form-control" name="Username" required /></label>
-                <label class="form-label">Password<input class="form-control" name="Password" type="password" autocomplete="new-password" required /></label>
-                <label class="form-label">Selected folders<input class="form-control" name="SelectedFolders" placeholder="INBOX, Archive" /></label>
-                <label class="form-check"><input class="form-check-input" name="UseSsl" type="checkbox" value="true" checked /> Use TLS</label>
-                <input type="hidden" name="Enabled" value="true" />
-                <button class="btn btn-primary align-self-start">Save source</button>
-            </form>
-        </details>
+        <button type="button" class="btn btn-primary" data-dialog-open="add-source-dialog" aria-controls="add-source-dialog" aria-haspopup="dialog">Add source</button>
     </div>
 
     @if (_sources.Count == 0)
@@ -52,18 +38,7 @@
                             <form method="post" action="/mailboxes/source/sync"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><button class="btn btn-sm btn-primary" disabled="@(!source.Enabled)">Sync</button></form>
                             <form method="post" action="/mailboxes/source/test"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="DiscoverFolders" value="true" /><button class="btn btn-sm btn-outline-secondary">Test</button></form>
                             <form method="post" action="/mailboxes/source/enabled"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@(!source.Enabled)" /><button class="btn btn-sm btn-outline-secondary">@(source.Enabled ? "Disable" : "Enable")</button></form>
-                            <details class="mailbox-editor row-editor"><summary class="btn btn-sm btn-outline-secondary">Edit</summary>
-                                <form method="post" action="/mailboxes/source/save" class="card card-body source-form"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@source.Enabled" />
-                                    <label class="form-label">Display name<input class="form-control" name="DisplayName" value="@source.DisplayName" required /></label>
-                                    <label class="form-label">IMAP host<input class="form-control" name="Host" value="@source.Host" required /></label>
-                                    <label class="form-label">Port<input class="form-control" name="Port" type="number" min="1" max="65535" value="@source.Port" required /></label>
-                                    <label class="form-label">Username<input class="form-control" name="Username" value="@source.Username" required /></label>
-                                    <label class="form-label">New password<input class="form-control" name="Password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current" /></label>
-                                    <label class="form-label">Selected folders<input class="form-control" name="SelectedFolders" value="@string.Join(',', source.SelectedFolders)" /></label>
-                                    <label class="form-check"><input class="form-check-input" name="UseSsl" type="checkbox" value="true" checked="@source.UseSsl" /> Use TLS</label>
-                                    <button class="btn btn-primary align-self-start">Save changes</button>
-                                </form>
-                            </details>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-dialog-open="@($"source-dialog-{source.Id:N}")" aria-controls="@($"source-dialog-{source.Id:N}")" aria-haspopup="dialog" aria-label="@($"Edit {source.DisplayName}")">Edit</button>
                         </td>
                     </tr>
                     @if (DiscoveredSourceId == source.Id && DiscoveredFolders.Count > 0)
@@ -94,15 +69,51 @@
                     <div><dt>Folder</dt><dd>@_destination.Folder</dd></div>
                     <div><dt>Password</dt><dd>••••••••</dd></div>
                 </dl>
-                <details class="mailbox-editor"><summary class="btn btn-outline-secondary">Edit destination</summary>@DestinationForm()</details>
+                <button type="button" class="btn btn-outline-secondary" data-dialog-open="destination-dialog" aria-controls="destination-dialog" aria-haspopup="dialog">Edit destination</button>
             </div>
         </div>
     }
     else
     {
-        <div class="empty-state"><p>No destination mailbox is configured.</p><details class="mailbox-editor"><summary class="btn btn-primary">Configure destination</summary>@DestinationForm()</details></div>
+        <div class="empty-state"><p>No destination mailbox is configured.</p><button type="button" class="btn btn-primary" data-dialog-open="destination-dialog" aria-controls="destination-dialog" aria-haspopup="dialog">Configure destination</button></div>
     }
 </section>
+
+<dialog id="add-source-dialog" class="mailbox-dialog" aria-labelledby="add-source-title">
+    <header class="dialog-heading"><h3 id="add-source-title" class="h5">Add source mailbox</h3><button type="button" class="btn btn-outline-secondary" data-dialog-close aria-label="Close add source mailbox">Close</button></header>
+    <form method="post" action="/mailboxes/source/save" class="card-body source-form">
+        <AntiforgeryToken />
+        <label class="form-label">Display name<input class="form-control" name="DisplayName" required /></label>
+        <label class="form-label">IMAP host<input class="form-control" name="Host" required /></label>
+        <label class="form-label">Port<input class="form-control" name="Port" type="number" min="1" max="65535" value="993" required /></label>
+        <label class="form-label">Username<input class="form-control" name="Username" required /></label>
+        <label class="form-label">Password<input class="form-control" name="Password" type="password" autocomplete="new-password" required /></label>
+        <label class="form-label">Selected folders<input class="form-control" name="SelectedFolders" placeholder="INBOX, Archive" /></label>
+        <label class="form-check"><input class="form-check-input" name="UseSsl" type="checkbox" value="true" checked /> Use TLS</label>
+        <input type="hidden" name="Enabled" value="true" />
+        <button class="btn btn-primary align-self-start">Save source</button>
+    </form>
+</dialog>
+@foreach (var source in _sources)
+{
+    <dialog id="@($"source-dialog-{source.Id:N}")" class="mailbox-dialog" aria-labelledby="@($"source-title-{source.Id:N}")">
+        <header class="dialog-heading"><h3 id="@($"source-title-{source.Id:N}")" class="h5">Edit @source.DisplayName</h3><button type="button" class="btn btn-outline-secondary" data-dialog-close aria-label="Close source mailbox editor">Close</button></header>
+        <form method="post" action="/mailboxes/source/save" class="card-body source-form"><AntiforgeryToken /><input type="hidden" name="Id" value="@source.Id" /><input type="hidden" name="Enabled" value="@source.Enabled" />
+            <label class="form-label">Display name<input class="form-control" name="DisplayName" value="@source.DisplayName" required /></label>
+            <label class="form-label">IMAP host<input class="form-control" name="Host" value="@source.Host" required /></label>
+            <label class="form-label">Port<input class="form-control" name="Port" type="number" min="1" max="65535" value="@source.Port" required /></label>
+            <label class="form-label">Username<input class="form-control" name="Username" value="@source.Username" required /></label>
+            <label class="form-label">New password<input class="form-control" name="Password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current" /></label>
+            <label class="form-label">Selected folders<input class="form-control" name="SelectedFolders" value="@string.Join(',', source.SelectedFolders)" /></label>
+            <label class="form-check"><input class="form-check-input" name="UseSsl" type="checkbox" value="true" checked="@source.UseSsl" /> Use TLS</label>
+            <button class="btn btn-primary align-self-start">Save changes</button>
+        </form>
+    </dialog>
+}
+<dialog id="destination-dialog" class="mailbox-dialog" aria-labelledby="destination-dialog-title">
+    <header class="dialog-heading"><h3 id="destination-dialog-title" class="h5">@(_destination is null ? "Configure destination" : "Edit destination")</h3><button type="button" class="btn btn-outline-secondary" data-dialog-close aria-label="Close destination mailbox editor">Close</button></header>
+    @DestinationForm()
+</dialog>
 
 @code {
     [CascadingParameter] public HttpContext HttpContext { get; set; } = null!;
@@ -115,7 +126,7 @@
     private DestinationMailboxSummary? _destination;
     protected override async Task OnInitializedAsync() { _sources = await MailboxService.ListSourcesAsync(HttpContext.User); _destination = await MailboxService.GetDestinationAsync(HttpContext.User); }
 
-    private RenderFragment DestinationForm() => @<form method="post" action="/mailboxes/destination/save" class="card card-body mt-3 destination-form">
+    private RenderFragment DestinationForm() => @<form method="post" action="/mailboxes/destination/save" class="card-body destination-form">
         <AntiforgeryToken />
         <label class="form-label">Username<input class="form-control" name="Username" value="@_destination?.Username" required /></label>
         <label class="form-label">@(_destination is null ? "Password" : "New password")<input class="form-control" name="Password" type="password" autocomplete="new-password" placeholder="@(_destination is null ? "Stored encrypted" : "Leave blank to keep current")" required="@(_destination is null)" /></label>

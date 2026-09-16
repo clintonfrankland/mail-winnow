@@ -1,0 +1,49 @@
+@page "/sending"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using MailWinnow.Infrastructure.Outgoing
+@implements IAsyncDisposable
+
+<PageTitle>Sending accounts</PageTitle>
+<header class="page-heading"><h1>Sending accounts</h1><p>Choose how replies leave Mail Winnow. Receiving accounts do not automatically provide sending credentials.</p></header>
+@if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+@if (_notice is not null) { <p role="status">@_notice</p> }
+<div class="sending-layout">
+<section aria-label="Configured sending accounts">
+    @if (_loading) { <p>Loading sending accounts…</p> }
+    else if (_accounts.Count == 0) { <p>No sending accounts yet. Add your provider's SMTP settings to send replies.</p> }
+    @foreach (var account in _accounts)
+    {
+        <article class="sending-card"><h2>@account.DisplayName</h2><p>@account.FromAddress</p><p>@(account.Enabled ? "Enabled" : "Disabled") · @account.Host:@account.Port</p>
+            <button type="button" class="btn btn-outline-primary" disabled="@_saving" @onclick="() => EditAccount(account)">Edit @account.DisplayName</button>
+        </article>
+    }
+    <button type="button" class="btn btn-outline-primary" disabled="@_saving" @onclick="NewAccount">Add sending account</button>
+</section>
+<section class="sending-editor" aria-label="Sending account settings">
+<h2>@(_id is null ? "Add sending account" : "Edit sending account")</h2>
+<EditForm Model="@this" OnSubmit="SaveAsync" FormName="sending-account">
+<fieldset disabled="@_saving">
+    <label>Display name<input class="form-control" aria-label="Display name" @bind="_displayName" required maxlength="200" /></label>
+    <label>From address<input class="form-control" aria-label="From address" type="email" @bind="_fromAddress" required /></label>
+    <label>Original source account<select class="form-select" aria-label="Original source account" @bind="_sourceMailboxId"><option value="">No source association</option>@foreach (var source in _sources) { <option value="@source.Id">@source.DisplayName</option> }</select></label>
+    <p class="settings-help">Optional account association for organizing identities. Choose From explicitly when replying; Mail Winnow does not guess from old delivery records.</p>
+    <label>SMTP server<input class="form-control" aria-label="SMTP server" @bind="_host" required /></label>
+    <label>Port<input class="form-control" aria-label="Port" type="number" @bind="_port" min="1" max="65535" required /></label>
+    <label>Connection security<select class="form-select" aria-label="Connection security" @bind="_useStartTls"><option value="true">STARTTLS (usually port 587)</option><option value="false">TLS from connection start (usually port 465)</option></select></label>
+    <label class="check-label"><input type="checkbox" @bind="_useAuthentication" /> Server requires authentication</label>
+    @if (_useAuthentication)
+    {
+        <label>SMTP username<input class="form-control" aria-label="SMTP username" @bind="_username" autocomplete="username" /></label>
+        <label>@(_hasPassword ? "New password (optional)" : "Password")<input class="form-control" aria-label="SMTP password" type="password" @bind="_password" autocomplete="new-password" placeholder="@(_hasPassword ? "Leave blank to keep saved password" : "Stored encrypted")" /></label>
+        <p class="settings-help">Use your provider's SMTP/app password. Saved credentials are encrypted and are never shown here.</p>
+    }
+    <label>Sent copy<select class="form-select" aria-label="Sent copy" @bind="_sentCopyPolicy"><option value="@SentCopyPolicy.ProviderSaves">My provider saves sent mail automatically</option><option value="@SentCopyPolicy.LocalSentFolder">Save a copy in my local mailbox</option></select></label>
+    @if (_sentCopyPolicy == SentCopyPolicy.LocalSentFolder) { <label>Local Sent folder<input class="form-control" aria-label="Local Sent folder" @bind="_sentFolder" required /></label> }
+    <p class="settings-help">Sent-copy failures never resend a message that the SMTP server has already accepted.</p>
+    <label class="check-label"><input type="checkbox" @bind="_enabled" /> Enabled</label>
+    <button type="submit" class="btn btn-primary">@(_saving ? "Saving…" : "Save sending account")</button>
+</fieldset>
+</EditForm>
+</section>
+</div>

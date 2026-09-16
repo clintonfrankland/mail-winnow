@@ -28,7 +28,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Mailboxes/*.cs;Persistence/*.cs;Persistence/Migrations/*.cs;Rules/*.cs;Security/*.cs" />
+    <Compile Include="Mailboxes/*.cs;Persistence/*.cs;Persistence/Migrations/*.cs;Rules/*.cs;Security/*.cs;Outgoing/*.cs" />
   </ItemGroup>
 
 </Project>

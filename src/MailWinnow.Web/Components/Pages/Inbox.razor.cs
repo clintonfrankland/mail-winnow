@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using MailWinnow.Infrastructure.Mailboxes;
+using MailWinnow.Infrastructure.Outgoing;
 using MailWinnow.Web.Components.Layout;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -21,6 +22,9 @@ public partial class Inbox
     private ClaimsPrincipal _user = null!;
     private IReadOnlyList<InboxMessageSummary> _messages = [];
     private InboxMessageContent? _selected;
+    private MessageDraftView? _replyDraft;
+    private bool _creatingReply;
+    private string? _replyNotice;
     private uint? _selectedUidValidity;
     private string? _error;
     private string? _refreshMessage;
@@ -177,6 +181,39 @@ public partial class Inbox
             if (!_disposed) await InvokeAsync(StateHasChanged);
         }
     }
+
+    private async Task StartReplyAsync(bool replyAll)
+    {
+        if (_creatingReply || _selected is null || _disposed) return;
+        if (_replyDraft is not null)
+        {
+            _replyNotice = "Your reply is still open below. Save and close it before starting another reply.";
+            return;
+        }
+        if (_selected.DestinationMailboxId is not { } destinationId || _selectedUidValidity is not { } validity ||
+            _selected.DestinationFolder is not { } folder || _selected.AttachmentMailboxIdentity is not { } identity)
+        {
+            _replyNotice = "The mailbox identity is unavailable. Refresh and reopen this message before replying.";
+            return;
+        }
+        // Capture identity before awaiting: selecting/deleting another message must not change the reply target.
+        var source = new ReplySource(destinationId, folder, identity, _selected.Uid, validity);
+        _creatingReply = true;
+        _replyNotice = "Preparing your reply… You can keep using the inbox.";
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            _replyDraft = await scope.ServiceProvider.GetRequiredService<IOutgoingMailService>()
+                .CreateReplyAsync(_user, source, replyAll, _lifetime.Token);
+            _replyNotice = null;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (OutgoingMailException exception) { _replyNotice = exception.Message; }
+        catch (Exception) { _replyNotice = "The reply could not be prepared. Please try again."; }
+        finally { _creatingReply = false; }
+    }
+
+    private void CloseReply() => _replyDraft = null;
 
     private void ShowImages() => _showImages = true;
 

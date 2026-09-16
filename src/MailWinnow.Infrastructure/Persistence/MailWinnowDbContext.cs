@@ -1,4 +1,5 @@
 using MailWinnow.Core.Rules;
+using MailWinnow.Infrastructure.Outgoing;
 using MailWinnow.Infrastructure.Security;
 using MailWinnow.Infrastructure.Mailboxes;
 using MailWinnow.Infrastructure.Rules;
@@ -24,9 +25,52 @@ public sealed class MailWinnowDbContext(DbContextOptions<MailWinnowDbContext> op
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<WorkerHeartbeat> WorkerHeartbeats => Set<WorkerHeartbeat>();
 
+    public DbSet<SendingAccount> SendingAccounts => Set<SendingAccount>();
+    public DbSet<MessageDraft> MessageDrafts => Set<MessageDraft>();
+    public DbSet<DraftAttachment> DraftAttachments => Set<DraftAttachment>();
+    public DbSet<OutgoingMessage> OutgoingMessages => Set<OutgoingMessage>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.Entity<SendingAccount>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450);
+            entity.Property(x => x.DisplayName).HasMaxLength(200);
+            entity.Property(x => x.FromAddress).HasMaxLength(320);
+            entity.Property(x => x.Host).HasMaxLength(255);
+            entity.Property(x => x.Username).HasMaxLength(320);
+            entity.Property(x => x.SentFolder).HasMaxLength(500);
+            entity.HasIndex(x => new { x.OwnerUserId, x.SourceMailboxId });
+        });
+        builder.Entity<MessageDraft>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450);
+            entity.Property(x => x.Revision).IsConcurrencyToken();
+            entity.HasIndex(x => new { x.OwnerUserId, x.UpdatedUtc });
+        });
+        builder.Entity<DraftAttachment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450);
+            entity.Property(x => x.FileName).HasMaxLength(180);
+            entity.Property(x => x.ContentType).HasMaxLength(200);
+            entity.HasIndex(x => x.OwnerUserId);
+            entity.HasOne<MessageDraft>().WithMany().HasForeignKey(x => x.DraftId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<OutgoingMessage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerUserId).HasMaxLength(450);
+            entity.Property(x => x.State).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.FailureCode).HasMaxLength(64);
+            entity.Property(x => x.SentCopyStatus).HasMaxLength(64);
+            entity.HasIndex(x => new { x.OwnerUserId, x.DraftId, x.DraftRevision }).IsUnique();
+            entity.HasIndex(x => new { x.State, x.NextAttemptUtc, x.CreatedUtc });
+            entity.HasIndex(x => new { x.State, x.SentUtc });
+        });
         builder.Entity<SourceMailbox>(entity =>
         {
             entity.HasKey(x => x.Id);

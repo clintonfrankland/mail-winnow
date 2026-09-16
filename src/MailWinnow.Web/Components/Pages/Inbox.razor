@@ -1,4 +1,5 @@
 @page "/inbox"
+@using MailWinnow.Web.Components.Mail
 @attribute [Authorize]
 @rendermode InteractiveServer
 @implements IAsyncDisposable
@@ -32,6 +33,8 @@
         else
         {
             <div class="reader-actions" aria-label="Email actions">
+                <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_busy || _creatingReply)" @onclick="() => StartReplyAsync(false)">Reply</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_busy || _creatingReply)" @onclick="() => StartReplyAsync(true)">Reply All</button>
                 @if (_selected.HasRemoteImages && !_showImages)
                 {
                     <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_busy" @onclick="ShowImages"><svg class="button-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M14.002 3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm-12-1a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/><path d="m10.648 7.646-2.5 3a.5.5 0 0 1-.768.015l-1.23-1.393-3.71 3.71A1 1 0 0 0 3 13h10a1 1 0 0 0 .864-.496l-2.753-4.858a.5.5 0 0 0-.463 0M5 6.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0"/></svg><span>Show images</span></button>
@@ -57,3 +60,9 @@
         }
     </article>
 </div>
+
+@if (_replyNotice is not null) { <p role="status" aria-live="polite">@_replyNotice</p> }
+@if (_replyDraft is not null)
+{
+    <MessageComposer @key="_replyDraft.Id" Draft="_replyDraft" Closed="CloseReply" />
+}

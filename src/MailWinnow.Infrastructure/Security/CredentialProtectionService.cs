@@ -7,7 +7,8 @@ public enum CredentialKind
     SourceImapPassword,
     SourceImapAppPassword,
     SourceOAuthRefreshToken,
-    DestinationImapPassword
+    DestinationImapPassword,
+    SmtpPassword
 }
 
 public interface ICredentialProtectionService

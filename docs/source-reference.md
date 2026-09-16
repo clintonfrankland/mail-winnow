@@ -154,3 +154,32 @@ Generated migration designers and model snapshot accompany the named migrations;
 | [`tests/MailWinnow.Tests/Mailboxes/InboxAttachmentEndpointTests.cs`](../tests/MailWinnow.Tests/Mailboxes/InboxAttachmentEndpointTests.cs) | Real HTTP routing/authentication, byte/header and error-status tests. |
 
 The existing `InboxReaderService.cs`, `Inbox.razor`, `Inbox.razor.cs`, `Inbox.razor.css` and `InboxRefreshInteractionTests.cs` additionally cover attachment metadata, accessible browser links and selection/deletion behavior.
+
+## Replies and mailbox dialogs (1.18.0.122)
+
+| File | Responsibility |
+|---|---|
+| [`src/MailWinnow.Infrastructure/Outgoing/OutgoingContracts.cs`](../src/MailWinnow.Infrastructure/Outgoing/OutgoingContracts.cs) | Reusable sending-account, reply, draft, attachment and outbox service contracts. |
+| [`src/MailWinnow.Infrastructure/Outgoing/OutgoingEntities.cs`](../src/MailWinnow.Infrastructure/Outgoing/OutgoingEntities.cs) | Separate durable outbound tables and immutable payload settings. |
+| [`src/MailWinnow.Infrastructure/Outgoing/OutgoingMailService.cs`](../src/MailWinnow.Infrastructure/Outgoing/OutgoingMailService.cs) | Owner-scoped fresh-context settings/draft operations, reply provenance, optimistic saves and idempotent Send. |
+| [`src/MailWinnow.Infrastructure/Outgoing/OutgoingMessagePolicies.cs`](../src/MailWinnow.Infrastructure/Outgoing/OutgoingMessagePolicies.cs) | Reply recipient/thread/quote policy, filenames and upload/message limits. |
+| [`src/MailWinnow.Infrastructure/Outgoing/OutgoingPayloadProtection.cs`](../src/MailWinnow.Infrastructure/Outgoing/OutgoingPayloadProtection.cs) | Purpose- and owner-separated protection for composed content and snapshots. |
+| [`src/MailWinnow.Infrastructure/Outgoing/OutgoingQueueProcessor.cs`](../src/MailWinnow.Infrastructure/Outgoing/OutgoingQueueProcessor.cs) | Renewable SMTP leases, uncertain-outcome containment, separate Sent-copy processing; worker host. |
+| [`src/MailWinnow.Infrastructure/Outgoing/OutgoingTransport.cs`](../src/MailWinnow.Infrastructure/Outgoing/OutgoingTransport.cs) | Strict-TLS MailKit SMTP submission and explicit failure phase classification. |
+| [`src/MailWinnow.Web/wwwroot/js/dialogs.js`](../src/MailWinnow.Web/wwwroot/js/dialogs.js) | Native top-layer dialogs, delegated enhanced-navigation support, focus restoration and password clearing. |
+| [`scripts/check-mailbox-dialogs.mjs`](../scripts/check-mailbox-dialogs.mjs) | Real Chromium desktop/mobile mailbox dialog regression with rendered fixture. |
+| [`src/MailWinnow.Web/Components/Mail/MessageComposer.razor`](../src/MailWinnow.Web/Components/Mail/MessageComposer.razor) | Accessible markup for MessageComposer. |
+| [`src/MailWinnow.Web/Components/Mail/MessageComposer.razor.cs`](../src/MailWinnow.Web/Components/Mail/MessageComposer.razor.cs) | Async interaction and state management for MessageComposer. |
+| [`src/MailWinnow.Web/Components/Mail/MessageComposer.razor.css`](../src/MailWinnow.Web/Components/Mail/MessageComposer.razor.css) | Responsive scoped styling for MessageComposer. |
+| [`src/MailWinnow.Web/Components/Pages/SendingAccounts.razor`](../src/MailWinnow.Web/Components/Pages/SendingAccounts.razor) | Accessible markup for SendingAccounts. |
+| [`src/MailWinnow.Web/Components/Pages/SendingAccounts.razor.cs`](../src/MailWinnow.Web/Components/Pages/SendingAccounts.razor.cs) | Async interaction and state management for SendingAccounts. |
+| [`src/MailWinnow.Web/Components/Pages/SendingAccounts.razor.css`](../src/MailWinnow.Web/Components/Pages/SendingAccounts.razor.css) | Responsive scoped styling for SendingAccounts. |
+| [`src/MailWinnow.Web/Components/Pages/Outbox.razor`](../src/MailWinnow.Web/Components/Pages/Outbox.razor) | Accessible markup for Outbox. |
+| [`src/MailWinnow.Web/Components/Pages/Outbox.razor.cs`](../src/MailWinnow.Web/Components/Pages/Outbox.razor.cs) | Async interaction and state management for Outbox. |
+| [`src/MailWinnow.Web/Components/Pages/Outbox.razor.css`](../src/MailWinnow.Web/Components/Pages/Outbox.razor.css) | Responsive scoped styling for Outbox. |
+| [`src/MailWinnow.Infrastructure/Persistence/Migrations/20260916161556_AddOutgoingMail.cs`](../src/MailWinnow.Infrastructure/Persistence/Migrations/20260916161556_AddOutgoingMail.cs) | Additive tables and indexes for sending accounts, drafts, protected uploads and SMTP outbox. |
+| [`src/MailWinnow.Infrastructure/Persistence/Migrations/20260916161556_AddOutgoingMail.Designer.cs`](../src/MailWinnow.Infrastructure/Persistence/Migrations/20260916161556_AddOutgoingMail.Designer.cs) | Generated model snapshot for the outgoing-mail migration. |
+| [`tests/MailWinnow.Tests/Mailboxes/OutgoingTransportTests.cs`](../tests/MailWinnow.Tests/Mailboxes/OutgoingTransportTests.cs) | Real loopback SMTP/TLS protocol checks, Bcc privacy and uncertain-submission behavior. |
+| [`tests/MailWinnow.Tests/Mailboxes/MailboxDialogRenderedTests.cs`](../tests/MailWinnow.Tests/Mailboxes/MailboxDialogRenderedTests.cs) | Rendered antiforgery forms, unique native-dialog identity and browser fixture. |
+| [`tests/MailWinnow.Tests/Outgoing/OutgoingUiTests.cs`](../tests/MailWinnow.Tests/Outgoing/OutgoingUiTests.cs) | Rendered composer and inbox async interaction, draft retention, settings and outbox regressions. |
+| [`tests/MailWinnow.Tests/Outgoing/OutgoingBackendTests.cs`](../tests/MailWinnow.Tests/Outgoing/OutgoingBackendTests.cs) | Owner isolation, durable queue/fencing, exact reply identity, bounded projections, protected uploads and outbound-only retention regressions. |
