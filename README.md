@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.18.0.122**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.18.0.123**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -85,6 +85,10 @@ dotnet test MailWinnow.sln --no-build
 ```
 
 `Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. The initial EF migration was an empty baseline; later migrations define the current application schema.
+
+## GitHub validation
+
+GitHub Actions runs the stable **Tests** check on pull requests to `main` and pushes to `main`. It uses the .NET 10 SDK and the same solution-wide restore, build, and full-test commands shown above. The workflow has read-only repository contents permission and is defined in [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 
 Blazor query-string filters must bind only framework-supported scalar types. For enum filters, bind the raw query value as `string`, parse it explicitly with `Enum.TryParse`, and treat missing or invalid values as an unfiltered request. Keep regression coverage for missing, valid, case-insensitive, and invalid values so a filter cannot prevent its page from rendering.
 
