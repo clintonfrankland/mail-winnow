@@ -53,7 +53,7 @@ class GhcrPublicationTests(unittest.TestCase):
         )
 
     def run_validator(
-        self, state_directory: Path, *extra_arguments: str
+        self, state_directory: Path, *extra_arguments: str, version: str = VERSION
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -62,7 +62,7 @@ class GhcrPublicationTests(unittest.TestCase):
                 "--state-directory",
                 str(state_directory),
                 "--version",
-                VERSION,
+                version,
                 "--revision",
                 REVISION,
                 "--source",
@@ -118,6 +118,27 @@ class GhcrPublicationTests(unittest.TestCase):
                     )
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("strict MAJOR.MINOR.PATCH", result.stderr)
+
+    def test_version_reader_rejects_unicode_digits_in_each_segment(self) -> None:
+        malformed_versions = ("1\u0661.19.0", "1.1\u0661.0", "1.19.0\u0661")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            for malformed_version in malformed_versions:
+                with self.subTest(version=malformed_version):
+                    result = self.run_version_reader(
+                        self.write_project(temporary_path, malformed_version)
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("strict MAJOR.MINOR.PATCH", result.stderr)
+
+    def test_version_reader_accepts_multi_digit_ascii_version(self) -> None:
+        ascii_version = "12.34.56"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = self.run_version_reader(
+                self.write_project(Path(temporary_directory), ascii_version)
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), ascii_version)
 
     def test_all_absent_tags_allow_publication(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -216,6 +237,24 @@ class GhcrPublicationTests(unittest.TestCase):
             )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("strict MAJOR.MINOR.PATCH", result.stderr)
+
+    def test_validator_rejects_unicode_digits_in_each_segment(self) -> None:
+        malformed_versions = ("1\u0661.19.0", "1.1\u0661.0", "1.19.0\u0661")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            state_directory = Path(temporary_directory)
+            for malformed_version in malformed_versions:
+                with self.subTest(version=malformed_version):
+                    result = self.run_validator(
+                        state_directory, version=malformed_version
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("strict MAJOR.MINOR.PATCH", result.stderr)
+
+    def test_validator_accepts_multi_digit_ascii_version(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = self.run_validator(Path(temporary_directory), version="12.34.56")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("publish=true", result.stdout)
 
     def test_buildx_metadata_digests_become_expected_digests(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
