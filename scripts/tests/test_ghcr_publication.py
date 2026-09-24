@@ -17,9 +17,11 @@ from ghcr_release import COMPONENTS, record_build_digests  # noqa: E402
 
 VERIFY_SCRIPT = SCRIPTS_DIRECTORY / "verify-ghcr-tag-state.py"
 RELEASE_SCRIPT = SCRIPTS_DIRECTORY / "ghcr_release.py"
+FIXTURES_DIRECTORY = Path(__file__).resolve().parent / "fixtures"
 VERSION = "1.19.0"
 REVISION = "a" * 40
 SOURCE = "https://github.com/clintonfrankland/mail-winnow"
+REAL_FLAT_REVISION = "9cfd75beaee655267f29224201f6d749c9203eff"
 
 
 def digest(seed: str) -> str:
@@ -43,6 +45,10 @@ def inspection(manifest_digest: str, revision: str = REVISION) -> dict[str, obje
     }
 
 
+def read_fixture(name: str) -> dict[str, object]:
+    return json.loads((FIXTURES_DIRECTORY / name).read_text(encoding="utf-8"))
+
+
 class GhcrPublicationTests(unittest.TestCase):
     def run_version_reader(self, project_path: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -53,7 +59,11 @@ class GhcrPublicationTests(unittest.TestCase):
         )
 
     def run_validator(
-        self, state_directory: Path, *extra_arguments: str, version: str = VERSION
+        self,
+        state_directory: Path,
+        *extra_arguments: str,
+        version: str = VERSION,
+        revision: str = REVISION,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -64,7 +74,7 @@ class GhcrPublicationTests(unittest.TestCase):
                 "--version",
                 version,
                 "--revision",
-                REVISION,
+                revision,
                 "--source",
                 SOURCE,
                 *extra_arguments,
@@ -92,6 +102,48 @@ class GhcrPublicationTests(unittest.TestCase):
                 (state_directory / f"{component}-{tag}.json").write_text(
                     json.dumps(inspection(state_digest, revision)), encoding="utf-8"
                 )
+
+    def write_complete_fixture_state(
+        self, state_directory: Path, fixture_name: str, version: str, revision: str
+    ) -> None:
+        fixture = read_fixture(fixture_name)
+        state_directory.mkdir()
+        for component in COMPONENTS:
+            for tag in (version, revision):
+                (state_directory / f"{component}-{tag}.json").write_text(
+                    json.dumps(fixture), encoding="utf-8"
+                )
+
+    def assert_fixture_supports_preflight_and_post_push_verification(
+        self, fixture_name: str, version: str = VERSION, revision: str = REVISION
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            state_directory = temporary_path / "state"
+            expected_directory = temporary_path / "expected"
+            self.write_complete_fixture_state(
+                state_directory, fixture_name, version, revision
+            )
+
+            preflight = self.run_validator(
+                state_directory,
+                "--write-expected-digests",
+                str(expected_directory),
+                version=version,
+                revision=revision,
+            )
+            post_push = self.run_validator(
+                state_directory,
+                "--expected-digest-directory",
+                str(expected_directory),
+                version=version,
+                revision=revision,
+            )
+
+        self.assertEqual(preflight.returncode, 0, preflight.stderr)
+        self.assertIn("publish=false", preflight.stdout)
+        self.assertEqual(post_push.returncode, 0, post_push.stderr)
+        self.assertIn("publish=false", post_push.stdout)
 
     def test_workflow_uses_the_shared_version_reader(self) -> None:
         workflow = (REPOSITORY_ROOT / ".github/workflows/publish-ghcr.yml").read_text(
@@ -169,6 +221,38 @@ class GhcrPublicationTests(unittest.TestCase):
         self.assertIn("publish=false", preflight.stdout)
         self.assertEqual(rerun.returncode, 0, rerun.stderr)
         self.assertIn("publish=false", rerun.stdout)
+
+    def test_real_flat_linux_amd64_fixture_supports_preflight_and_post_push_verification(
+        self,
+    ) -> None:
+        self.assert_fixture_supports_preflight_and_post_push_verification(
+            "ghcr-imagetools-flat-linux-amd64.json",
+            revision=REAL_FLAT_REVISION,
+        )
+
+    def test_indexed_linux_amd64_fixture_remains_supported(self) -> None:
+        self.assert_fixture_supports_preflight_and_post_push_verification(
+            "ghcr-imagetools-indexed-linux-amd64.json"
+        )
+
+    def test_flat_inspection_rejects_non_linux_amd64_platform(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            state_directory = temporary_path / "state"
+            fixture = read_fixture("ghcr-imagetools-flat-linux-amd64.json")
+            fixture["image"]["architecture"] = "arm64"  # type: ignore[index]
+            state_directory.mkdir()
+            for component in COMPONENTS:
+                for tag in (VERSION, REAL_FLAT_REVISION):
+                    (state_directory / f"{component}-{tag}.json").write_text(
+                        json.dumps(fixture), encoding="utf-8"
+                    )
+            result = self.run_validator(
+                state_directory, revision=REAL_FLAT_REVISION
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("usable linux/amd64 imagetools inspection", result.stderr)
 
     def test_agreeing_tags_with_an_unexpected_digest_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
