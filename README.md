@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.18.0.123**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.19.0.124**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -89,6 +89,10 @@ dotnet test MailWinnow.sln --no-build
 ## GitHub validation
 
 GitHub Actions runs the stable **Tests** check on pull requests to `main` and pushes to `main`. It uses the .NET 10 SDK and the same solution-wide restore, build, and full-test commands shown above. The workflow has read-only repository contents permission and is defined in [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+
+After a successful **Tests** run that was triggered by a trusted push to the canonical repository's `main` branch, [the GHCR publication workflow](.github/workflows/publish-ghcr.yml) checks out that exact tested 40-character revision and publishes the Web, Worker, and DbMigrator images. The images are `ghcr.io/clintonfrankland/mail-winnow-web`, `ghcr.io/clintonfrankland/mail-winnow-worker`, and `ghcr.io/clintonfrankland/mail-winnow-db-migrator`. Each image has exactly two production tags: the strict `VersionPrefix` (`MAJOR.MINOR.PATCH`) and the full tested SHA; it never publishes `latest`. A future GHCR release must advance `VersionPrefix` for a new semantic tag while keeping `BuildNumber` monotonic for the separate four-part assembly/display version.
+
+Before pushing, the workflow inspects all six expected registry tags and fails closed on malformed versions, semantic-tag collisions, or any partial/conflicting state. A rerun is a no-op only when every expected semantic/SHA tag pair already resolves to the same digest with the expected OCI source, version, and revision labels. For a publication it captures each Buildx-produced manifest digest; for a no-op rerun it retains the complete preflight digest set. The final inspection requires both tags of every component to match those independently captured expected digests. The workflow serializes its own publication runs and rechecks those digests after publishing; this is not an atomic registry immutability guarantee against an unrelated writer, so package write access must remain tightly controlled.
 
 Blazor query-string filters must bind only framework-supported scalar types. For enum filters, bind the raw query value as `string`, parse it explicitly with `Enum.TryParse`, and treat missing or invalid values as an unfiltered request. Keep regression coverage for missing, valid, case-insensitive, and invalid values so a filter cannot prevent its page from rendering.
 
