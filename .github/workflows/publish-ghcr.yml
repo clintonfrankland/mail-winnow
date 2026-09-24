@@ -1,0 +1,201 @@
+name: Publish GHCR images
+
+on:
+  workflow_run:
+    workflows:
+      - Tests
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mailwinnow-ghcr-publication
+  cancel-in-progress: false
+
+jobs:
+  validate-tested-push:
+    name: Validate tested main push
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tested-revision: ${{ steps.validate.outputs.tested-revision }}
+
+    steps:
+      - name: Validate the completed Tests run
+        id: validate
+        env:
+          REPOSITORY: ${{ github.repository }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          [[ "$REPOSITORY" == "clintonfrankland/mail-winnow" ]] || {
+            echo "Refusing to publish outside the canonical repository." >&2
+            exit 1
+          }
+          [[ "$RUN_CONCLUSION" == "success" ]] || {
+            echo "Refusing publication because Tests did not succeed." >&2
+            exit 1
+          }
+          [[ "$RUN_EVENT" == "push" ]] || {
+            echo "Refusing publication because Tests was not triggered by a push." >&2
+            exit 1
+          }
+          [[ "$RUN_HEAD_BRANCH" == "main" ]] || {
+            echo "Refusing publication because the tested ref is not main." >&2
+            exit 1
+          }
+          [[ "$RUN_HEAD_REPOSITORY" == "clintonfrankland/mail-winnow" ]] || {
+            echo "Refusing publication because the tested revision is not from the canonical repository." >&2
+            exit 1
+          }
+          [[ "$RUN_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Refusing publication because the tested revision is not a full lowercase Git SHA." >&2
+            exit 1
+          }
+
+          echo "tested-revision=$RUN_HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish tested images
+    needs: validate-tested-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out the exact tested revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          ref: ${{ needs.validate-tested-push.outputs.tested-revision }}
+          persist-credentials: false
+
+      - name: Confirm the checked-out revision and read the release version
+        id: version
+        env:
+          TESTED_REVISION: ${{ needs.validate-tested-push.outputs.tested-revision }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$TESTED_REVISION" ]] || {
+            echo "Checked-out revision does not match the successful Tests run." >&2
+            exit 1
+          }
+
+          VERSION="$(python3 - <<'PY'
+          import re
+          import xml.etree.ElementTree as element_tree
+
+          project = element_tree.parse("src/MailWinnow.Web/MailWinnow.Web.csproj")
+          version = project.findtext(".//VersionPrefix")
+          if version is None or re.fullmatch(r"(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)", version) is None:
+              raise SystemExit("VersionPrefix must be strict MAJOR.MINOR.PATCH.")
+          print(version)
+          PY
+          )"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.0.0
+
+      - name: Inspect expected GHCR tag state
+        id: registry-state
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TESTED_REVISION: ${{ needs.validate-tested-push.outputs.tested-revision }}
+          OCI_SOURCE: https://github.com/clintonfrankland/mail-winnow
+        run: |
+          set -euo pipefail
+          mkdir -p .ghcr-state
+
+          for component in web worker db-migrator; do
+            image="ghcr.io/clintonfrankland/mail-winnow-$component"
+            for tag in "$VERSION" "$TESTED_REVISION"; do
+              state_file=".ghcr-state/$component-$tag.json"
+              error_file="$state_file.error"
+              if docker buildx imagetools inspect "$image:$tag" --format '{{json .}}' > "$state_file" 2> "$error_file"; then
+                rm -f "$error_file"
+                continue
+              fi
+
+              error_message="$(<"$error_file")"
+              if [[ "${error_message,,}" == *"not found"* || "$error_message" == *"404"* ]]; then
+                rm -f "$state_file" "$error_file"
+                continue
+              fi
+
+              cat "$error_file" >&2
+              exit 1
+            done
+          done
+
+          python3 scripts/verify-ghcr-tag-state.py \
+            --state-directory .ghcr-state \
+            --version "$VERSION" \
+            --revision "$TESTED_REVISION" \
+            --source "$OCI_SOURCE" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish absent image set
+        if: steps.registry-state.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TESTED_REVISION: ${{ needs.validate-tested-push.outputs.tested-revision }}
+          OCI_SOURCE: https://github.com/clintonfrankland/mail-winnow
+        run: |
+          set -euo pipefail
+          for component in web worker db-migrator; do
+            case "$component" in
+              web) dockerfile=src/MailWinnow.Web/Dockerfile ;;
+              worker) dockerfile=src/MailWinnow.Worker/Dockerfile ;;
+              db-migrator) dockerfile=tools/MailWinnow.DbMigrator/Dockerfile ;;
+            esac
+
+            image="ghcr.io/clintonfrankland/mail-winnow-$component"
+            docker buildx build \
+              --file "$dockerfile" \
+              --tag "$image:$VERSION" \
+              --tag "$image:$TESTED_REVISION" \
+              --label "org.opencontainers.image.source=$OCI_SOURCE" \
+              --label "org.opencontainers.image.version=$VERSION" \
+              --label "org.opencontainers.image.revision=$TESTED_REVISION" \
+              --push \
+              .
+          done
+
+      - name: Verify published GHCR digests and labels
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TESTED_REVISION: ${{ needs.validate-tested-push.outputs.tested-revision }}
+          OCI_SOURCE: https://github.com/clintonfrankland/mail-winnow
+        run: |
+          set -euo pipefail
+          rm -rf .ghcr-state
+          mkdir .ghcr-state
+
+          for component in web worker db-migrator; do
+            image="ghcr.io/clintonfrankland/mail-winnow-$component"
+            for tag in "$VERSION" "$TESTED_REVISION"; do
+              docker buildx imagetools inspect "$image:$tag" --format '{{json .}}' \
+                > ".ghcr-state/$component-$tag.json"
+            done
+          done
+
+          python3 scripts/verify-ghcr-tag-state.py \
+            --state-directory .ghcr-state \
+            --version "$VERSION" \
+            --revision "$TESTED_REVISION" \
+            --source "$OCI_SOURCE"

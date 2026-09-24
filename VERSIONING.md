@@ -8,4 +8,6 @@ Mail Winnow uses Semantic Versioning with a monotonically increasing build numbe
 
 These values live in `src/MailWinnow.Web/MailWinnow.Web.csproj`. Bug fixes normally increment only `BuildNumber`; meaningful user-facing features also increment `VersionPrefix` according to Semantic Versioning.
 
+GitHub Container Registry releases use `VersionPrefix` as the strict semantic image tag and also publish the exact tested 40-character Git SHA. Each future GHCR release must advance `VersionPrefix` so its semantic tag is new; `BuildNumber` remains monotonic and is retained only in the four-part assembly/display version.
+
 The navigation displays the complete four-part assembly version so every shipped build is visible.
