@@ -5,13 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
-COMPONENTS = ("web", "worker", "db-migrator")
-VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+from ghcr_release import COMPONENTS, DIGEST_PATTERN, REVISION_PATTERN, VERSION_PATTERN
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -22,6 +19,16 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--source", required=True)
+    parser.add_argument(
+        "--expected-digest-directory",
+        type=Path,
+        help="directory containing one expected manifest digest per component",
+    )
+    parser.add_argument(
+        "--write-expected-digests",
+        type=Path,
+        help="record complete preflight manifest digests for a no-op rerun",
+    )
     return parser.parse_args()
 
 
@@ -46,6 +53,17 @@ def read_inspection(path: Path) -> tuple[str, dict[str, str]]:
 def fail(message: str) -> None:
     print(f"GHCR tag-state validation failed: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def read_expected_digest(expected_digest_directory: Path, component: str) -> str:
+    expected_path = expected_digest_directory / f"{component}.digest"
+    try:
+        digest = expected_path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ValueError(f"missing expected digest file {expected_path}") from error
+    if DIGEST_PATTERN.fullmatch(digest) is None:
+        raise ValueError(f"{expected_path} has an invalid expected manifest digest")
+    return digest
 
 
 def main() -> None:
@@ -84,6 +102,7 @@ def main() -> None:
         "org.opencontainers.image.version": arguments.version,
         "org.opencontainers.image.revision": arguments.revision,
     }
+    verified_digests: dict[str, str] = {}
     for component in COMPONENTS:
         semantic_digest, semantic_labels = read_inspection(
             inspection_paths[(component, arguments.version)]
@@ -93,6 +112,21 @@ def main() -> None:
         )
         if semantic_digest != revision_digest:
             fail(f"{component} semantic and revision tags resolve to different digests")
+        if arguments.expected_digest_directory is not None:
+            expected_digest: str | None = None
+            try:
+                expected_digest = read_expected_digest(
+                    arguments.expected_digest_directory, component
+                )
+            except ValueError as error:
+                fail(str(error))
+            if expected_digest is None:
+                fail(f"missing expected digest for {component}")
+            if semantic_digest != expected_digest:
+                fail(
+                    f"{component} tags resolve to {semantic_digest}; "
+                    f"expected independently captured digest {expected_digest}"
+                )
         for tag, labels in (
             (arguments.version, semantic_labels),
             (arguments.revision, revision_labels),
@@ -104,7 +138,15 @@ def main() -> None:
                         f"{component}:{tag} has {label}={actual_value!r}; "
                         f"expected {expected_value!r}"
                     )
+        verified_digests[component] = semantic_digest
         print(f"Verified {component}: {semantic_digest}", file=sys.stderr)
+
+    if arguments.write_expected_digests is not None:
+        arguments.write_expected_digests.mkdir(parents=True, exist_ok=True)
+        for component, digest in verified_digests.items():
+            (arguments.write_expected_digests / f"{component}.digest").write_text(
+                f"{digest}\n", encoding="utf-8"
+            )
 
     print("publish=false")
     print(

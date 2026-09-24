@@ -83,6 +83,7 @@ Use Semantic Versioning with an explicit build number for every development proj
 
 ### Automation
 - Keep automation explicit, inspectable, and documented.
+- Factor release-critical structured validation into reusable scripts and add regression tests for the exact workflow invocation, including expected-output assertions.
 - Update any automation docs when workflows change.
 - Prefer deterministic logging and retry behavior in cron tools.
 - Use timeout-aware process helpers instead of raw process spawning.

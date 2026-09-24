@@ -89,17 +89,8 @@ jobs:
             exit 1
           }
 
-          VERSION="$(python3 - <<'PY'
-          import re
-          import xml.etree.ElementTree as element_tree
-
-          project = element_tree.parse("src/MailWinnow.Web/MailWinnow.Web.csproj")
-          version = project.findtext(".//VersionPrefix")
-          if version is None or re.fullmatch(r"(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)", version) is None:
-              raise SystemExit("VersionPrefix must be strict MAJOR.MINOR.PATCH.")
-          print(version)
-          PY
-          )"
+          VERSION="$(python3 scripts/ghcr_release.py read-version \
+            --project src/MailWinnow.Web/MailWinnow.Web.csproj)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
@@ -120,7 +111,8 @@ jobs:
           OCI_SOURCE: https://github.com/clintonfrankland/mail-winnow
         run: |
           set -euo pipefail
-          mkdir -p .ghcr-state
+          rm -rf .ghcr-state .ghcr-expected-digests
+          mkdir .ghcr-state
 
           for component in web worker db-migrator; do
             image="ghcr.io/clintonfrankland/mail-winnow-$component"
@@ -147,7 +139,8 @@ jobs:
             --state-directory .ghcr-state \
             --version "$VERSION" \
             --revision "$TESTED_REVISION" \
-            --source "$OCI_SOURCE" >> "$GITHUB_OUTPUT"
+            --source "$OCI_SOURCE" \
+            --write-expected-digests .ghcr-expected-digests >> "$GITHUB_OUTPUT"
 
       - name: Build and publish absent image set
         if: steps.registry-state.outputs.publish == 'true'
@@ -157,6 +150,7 @@ jobs:
           OCI_SOURCE: https://github.com/clintonfrankland/mail-winnow
         run: |
           set -euo pipefail
+          mkdir .ghcr-build-metadata
           for component in web worker db-migrator; do
             case "$component" in
               web) dockerfile=src/MailWinnow.Web/Dockerfile ;;
@@ -167,6 +161,7 @@ jobs:
             image="ghcr.io/clintonfrankland/mail-winnow-$component"
             docker buildx build \
               --file "$dockerfile" \
+              --metadata-file ".ghcr-build-metadata/$component.json" \
               --tag "$image:$VERSION" \
               --tag "$image:$TESTED_REVISION" \
               --label "org.opencontainers.image.source=$OCI_SOURCE" \
@@ -175,6 +170,10 @@ jobs:
               --push \
               .
           done
+
+          python3 scripts/ghcr_release.py record-build-digests \
+            --metadata-directory .ghcr-build-metadata \
+            --expected-digest-directory .ghcr-expected-digests
 
       - name: Verify published GHCR digests and labels
         env:
@@ -198,4 +197,5 @@ jobs:
             --state-directory .ghcr-state \
             --version "$VERSION" \
             --revision "$TESTED_REVISION" \
-            --source "$OCI_SOURCE"
+            --source "$OCI_SOURCE" \
+            --expected-digest-directory .ghcr-expected-digests

@@ -26,6 +26,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Test release workflow helpers
+        run: python3 -m unittest discover --start-directory scripts/tests --pattern 'test_*.py'
+
       - name: Restore
         run: dotnet restore MailWinnow.sln
 
