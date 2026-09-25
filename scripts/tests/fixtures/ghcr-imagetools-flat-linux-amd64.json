@@ -1,0 +1,75 @@
+{
+  "name": "ghcr.io/clintonfrankland/mail-winnow-web:1.19.0",
+  "manifest": {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.index.v1+json",
+    "digest": "sha256:0d1e5de8d78d3974086a90de0410511bb0cd88cf7f19edbd3ca57eb2b4091283",
+    "size": 856,
+    "manifests": [
+      {
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "digest": "sha256:abf253f7837a06043bc48f1ae18b6a0e8a5985a85e47dc30c32f5b83401cbd9b",
+        "size": 1818,
+        "platform": {
+          "architecture": "amd64",
+          "os": "linux"
+        }
+      },
+      {
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "digest": "sha256:a55ba4a147e5ed81faf231768f30b79ba7f321e905d29bf5318acc6adc900ead",
+        "size": 838,
+        "annotations": {
+          "vnd.docker.reference.digest": "sha256:abf253f7837a06043bc48f1ae18b6a0e8a5985a85e47dc30c32f5b83401cbd9b",
+          "vnd.docker.reference.type": "attestation-manifest"
+        },
+        "platform": {
+          "architecture": "unknown",
+          "os": "unknown"
+        }
+      }
+    ]
+  },
+  "image": {
+    "created": "2026-09-24T23:45:23.420413198Z",
+    "architecture": "amd64",
+    "os": "linux",
+    "config": {
+      "User": "1654",
+      "ExposedPorts": {
+        "8080/tcp": {}
+      },
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "APP_UID=1654",
+        "ASPNETCORE_HTTP_PORTS=8080",
+        "DOTNET_RUNNING_IN_CONTAINER=true",
+        "DOTNET_VERSION=10.0.12",
+        "ASPNET_VERSION=10.0.12"
+      ],
+      "Entrypoint": [
+        "dotnet",
+        "MailWinnow.Web.dll"
+      ],
+      "WorkingDir": "/app",
+      "Labels": {
+        "org.opencontainers.image.revision": "9cfd75beaee655267f29224201f6d749c9203eff",
+        "org.opencontainers.image.source": "https://github.com/clintonfrankland/mail-winnow",
+        "org.opencontainers.image.version": "1.19.0"
+      }
+    },
+    "rootfs": {
+      "type": "layers",
+      "diff_ids": [
+        "sha256:d81fb2a7c6ee3be05fdefaa7fd223be219c1ab172083ec1b994c3ecda33ac0a8"
+      ]
+    },
+    "history": [
+      {
+        "created": "2026-09-24T23:45:23.420413198Z",
+        "created_by": "COPY /app . # buildkit",
+        "comment": "buildkit.dockerfile.v0"
+      }
+    ]
+  }
+}
