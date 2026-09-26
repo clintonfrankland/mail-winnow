@@ -189,6 +189,32 @@ public sealed class OutgoingUiTests : BunitContext
     }
 
     [Fact]
+    public async Task EditedAccountConnectionSecuritySelectionRemainsVisibleAndPersists()
+    {
+        var service = Configure();
+        Services.AddScoped<IMailboxConfigurationService>(_ => new MailboxSettingsFake());
+        var page = Render<SendingAccounts>();
+
+        await Button(page, "Edit Personal").ClickAsync(new());
+        var security = () => (AngleSharp.Html.Dom.IHtmlSelectElement)page.Find("select[aria-label='Connection security']");
+        Assert.Single(page.FindAll("option[value='starttls']"));
+        Assert.Single(page.FindAll("option[value='implicit-tls']"));
+        await page.Find("form").SubmitAsync();
+        Assert.True(service.LastAccountSave!.UseStartTls);
+
+        await security().ChangeAsync(new() { Value = "implicit-tls" });
+        page.Render();
+
+        await page.Find("form").SubmitAsync();
+        Assert.False(service.LastAccountSave!.UseStartTls);
+        Assert.False(service.Account.UseStartTls);
+
+        await Button(page, "Edit Personal").ClickAsync(new());
+        await page.Find("form").SubmitAsync();
+        Assert.False(service.LastAccountSave!.UseStartTls);
+    }
+
+    [Fact]
     public void SentCopyRetryIsLabeledAsArchiveOnlyRatherThanSendingAgain()
     {
         var service = Configure();
@@ -289,7 +315,12 @@ public sealed class OutgoingUiTests : BunitContext
         public IReadOnlyList<OutboxMessageView> Outbox = [];
         public FakeOutgoing() { Draft = new(Guid.NewGuid(), 1, Account.Id, "sender@example.test", "", "", "Re: Original", "\n\n> Original body", [], DateTimeOffset.UtcNow, null); }
         public Task<IReadOnlyList<SendingAccountView>> ListSendingAccountsAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<SendingAccountView>>([Account]);
-        public Task<SendingAccountView> SaveSendingAccountAsync(ClaimsPrincipal user, SaveSendingAccountRequest request, CancellationToken cancellationToken = default) { LastAccountSave = request; return Task.FromResult(Account); }
+        public Task<SendingAccountView> SaveSendingAccountAsync(ClaimsPrincipal user, SaveSendingAccountRequest request, CancellationToken cancellationToken = default)
+        {
+            LastAccountSave = request;
+            Account = Account with { UseStartTls = request.UseStartTls };
+            return Task.FromResult(Account);
+        }
         public Task<MessageDraftView> CreateReplyAsync(ClaimsPrincipal user, ReplySource source, bool replyAll, CancellationToken cancellationToken = default) { ReplySource = source; ReplyAll = replyAll; return Task.FromResult(Draft); }
         public Task<MessageDraftView> CreateDraftAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => Task.FromResult(Draft);
         public Task<IReadOnlyList<MessageDraftView>> ListDraftsAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MessageDraftView>>([Draft]);
