@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.19.1.125**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.19.2.126**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -87,6 +87,8 @@ dotnet test MailWinnow.sln --no-build
 `Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. The initial EF migration was an empty baseline; later migrations define the current application schema.
 
 ## GitHub validation
+
+The GHCR publication workflow skips validation and publishing cleanly when the completed Tests run comes from a pull request, a non-`main` branch, or an unsuccessful test run. Only successful `main` push runs enter validation; the existing canonical-repository and exact-revision safety checks still fail closed for eligible runs. A failed Tests run remains visible as a failure in the Tests workflow itself.
 
 GitHub Actions runs the stable **Tests** check on pull requests to `main` and pushes to `main`. It uses the .NET 10 SDK and the same solution-wide restore, build, and full-test commands shown above. The workflow has read-only repository contents permission and is defined in [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 
