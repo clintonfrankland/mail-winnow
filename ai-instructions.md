@@ -69,6 +69,17 @@ Use Semantic Versioning with an explicit build number for every development proj
 3. Run the build after changes.
 4. Run all tests before calling work done.
 
+### GitHub Delivery Default
+
+These standing instructions apply to every task that changes tracked project files, including tasks created through Kanban triage. Clinton does not need to repeat them in individual task descriptions.
+
+1. GitHub at `https://github.com/clintonfrankland/mail-winnow` is the authoritative publication target. Verify the remote URL before pushing; publishing only to Gitea does not satisfy delivery.
+2. Unless Clinton explicitly requests local-only work, build and test the changes, commit them on a feature branch, and push that branch to GitHub before reporting completion. Read back the remote branch and verify that its SHA matches the intended local commit.
+3. Open or update a pull request against `main`, verify GitHub checks for the exact current PR head, and hand off for independent review. Samantha's implementation work should be routed to Ivy for review. A local commit or a successful push alone is not completed delivery.
+4. When creating Kanban implementation tasks, link the `mail-winnow` project and set `completion_contract` to `clintonfrankland/mail-winnow` where supported. These repository instructions do not automatically change a card's contract or enforce review routing. Do not treat a `local-only` card default as permission to skip the standing publication requirement.
+5. Never push directly to `main`, merge a pull request, or enable auto-merge without Clinton's explicit approval. Stop at the approval boundary with the PR URL, exact commit, verification results, review status, and remaining risks.
+6. If publication, checks, or review are blocked, report the blocker and preserve the branch/worktree. Do not report the task as completed or silently downgrade it to local-only work.
+
 ### Parallel Work
 - Use parallel help for isolated subtasks.
 - Only one editor should change a given file at a time.

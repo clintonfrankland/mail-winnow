@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.19.1.125**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.19.1.126**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -75,6 +75,8 @@ The hosts may reference Core and Infrastructure. Infrastructure may reference Co
 ## Development conventions
 
 Canonical AI contributor guidance lives in `ai-instructions.md`, with compatibility entry points in `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md`. Every behavior change requires appropriate new or updated tests and a full test-suite run.
+
+By default, tasks that change tracked files must publish a verified feature branch and pull request to `clintonfrankland/mail-winnow` on GitHub, verify checks for the current PR head, and hand off for independent review. A local commit alone is not delivery. Clinton must explicitly approve any merge or direct update to `main`; local-only work must also be explicitly requested. See the GitHub Delivery Default in `ai-instructions.md` for the full standing policy and Kanban contract guidance.
 
 Use the .NET 10 SDK and run the solution from the repository root:
 
