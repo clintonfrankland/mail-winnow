@@ -30,7 +30,7 @@
     <p class="settings-help">Optional account association for organizing identities. Choose From explicitly when replying; Mail Winnow does not guess from old delivery records.</p>
     <label>SMTP server<input class="form-control" aria-label="SMTP server" @bind="_host" required /></label>
     <label>Port<input class="form-control" aria-label="Port" type="number" @bind="_port" min="1" max="65535" required /></label>
-    <label>Connection security<select class="form-select" aria-label="Connection security" @bind="_useStartTls"><option value="true">STARTTLS (usually port 587)</option><option value="false">TLS from connection start (usually port 465)</option></select></label>
+    <label>Connection security<select class="form-select" aria-label="Connection security" @bind="_connectionSecurity"><option value="starttls">STARTTLS (usually port 587)</option><option value="implicit-tls">TLS from connection start (usually port 465)</option></select></label>
     <label class="check-label"><input type="checkbox" @bind="_useAuthentication" /> Server requires authentication</label>
     @if (_useAuthentication)
     {
