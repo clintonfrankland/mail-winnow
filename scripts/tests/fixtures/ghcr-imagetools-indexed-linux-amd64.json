@@ -1,0 +1,16 @@
+{
+  "manifest": {
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "image": {
+    "linux/amd64": {
+      "config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/clintonfrankland/mail-winnow",
+          "org.opencontainers.image.version": "1.19.0",
+          "org.opencontainers.image.revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    }
+  }
+}

@@ -32,22 +32,42 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def read_linux_amd64_labels(image: object, path: Path) -> dict[str, str]:
+    """Read OCI labels from either Buildx linux/amd64 inspection shape."""
+    try:
+        if not isinstance(image, dict):
+            raise TypeError("image is not an object")
+
+        if "config" in image:
+            if image.get("os") != "linux" or image.get("architecture") != "amd64":
+                raise ValueError("flat image is not linux/amd64")
+            configuration = image["config"]
+        else:
+            configuration = image["linux/amd64"]["config"]
+        labels = configuration.get("Labels", {})
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            f"{path.name} is not a usable linux/amd64 imagetools inspection"
+        ) from error
+
+    if not isinstance(labels, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in labels.items()
+    ):
+        raise ValueError(f"{path.name} has invalid OCI labels")
+    return labels
+
+
 def read_inspection(path: Path) -> tuple[str, dict[str, str]]:
     try:
         inspection = json.loads(path.read_text(encoding="utf-8"))
         digest = inspection["manifest"]["digest"]
-        labels = inspection["image"]["linux/amd64"]["config"].get("Labels", {})
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise ValueError(f"{path.name} is not a usable linux/amd64 imagetools inspection") from error
 
     if not isinstance(digest, str) or not digest.startswith("sha256:"):
         raise ValueError(f"{path.name} has no manifest digest")
-    if not isinstance(labels, dict) or not all(
-        isinstance(key, str) and isinstance(value, str) for key, value in labels.items()
-    ):
-        raise ValueError(f"{path.name} has invalid OCI labels")
 
-    return digest, labels
+    return digest, read_linux_amd64_labels(inspection.get("image"), path)
 
 
 def fail(message: str) -> None:
