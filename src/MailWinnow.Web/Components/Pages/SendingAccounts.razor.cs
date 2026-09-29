@@ -8,6 +8,8 @@ namespace MailWinnow.Web.Components.Pages;
 
 public partial class SendingAccounts
 {
+    private const string StartTlsConnectionSecurity = "starttls";
+    private const string ImplicitTlsConnectionSecurity = "implicit-tls";
     [CascadingParameter] public Task<AuthenticationState> AuthenticationStateTask { get; set; } = null!;
     [Inject] private IOutgoingMailService Outgoing { get; set; } = null!;
     [Inject] private IServiceScopeFactory ScopeFactory { get; set; } = null!;
@@ -18,9 +20,16 @@ public partial class SendingAccounts
     private Guid? _id, _sourceMailboxId;
     private string _displayName = "", _fromAddress = "", _host = "", _username = "", _password = "", _sentFolder = "Sent";
     private int _port = 587;
-    private bool _useStartTls = true, _useAuthentication = true, _enabled = false, _hasPassword, _saving, _loading = true;
+    private string _connectionSecurity = StartTlsConnectionSecurity;
+    private bool _useAuthentication = true, _enabled = false, _hasPassword, _saving, _loading = true;
     private SentCopyPolicy _sentCopyPolicy = SentCopyPolicy.ProviderSaves;
     private string? _error, _notice;
+    private bool UseStartTls => _connectionSecurity switch
+    {
+        StartTlsConnectionSecurity => true,
+        ImplicitTlsConnectionSecurity => false,
+        _ => throw new OutgoingMailException("Choose a valid connection security option.")
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -40,7 +49,7 @@ public partial class SendingAccounts
     {
         _id = account.Id; _sourceMailboxId = account.SourceMailboxId; _displayName = account.DisplayName;
         _fromAddress = account.FromAddress; _host = account.Host; _port = account.Port;
-        _useStartTls = account.UseStartTls; _useAuthentication = account.UseAuthentication;
+        _connectionSecurity = account.UseStartTls ? StartTlsConnectionSecurity : ImplicitTlsConnectionSecurity; _useAuthentication = account.UseAuthentication;
         _username = account.Username; _hasPassword = account.HasPassword; _password = "";
         _enabled = account.Enabled; _sentCopyPolicy = account.SentCopyPolicy; _sentFolder = account.SentFolder;
         _error = null; _notice = null;
@@ -50,7 +59,7 @@ public partial class SendingAccounts
     {
         _id = null; _sourceMailboxId = null;
         _displayName = ""; _fromAddress = ""; _host = ""; _username = ""; _password = ""; _sentFolder = "Sent";
-        _port = 587; _useStartTls = true; _useAuthentication = true; _enabled = false; _hasPassword = false;
+        _port = 587; _connectionSecurity = StartTlsConnectionSecurity; _useAuthentication = true; _enabled = false; _hasPassword = false;
         _sentCopyPolicy = SentCopyPolicy.ProviderSaves; _error = null; _notice = null;
     }
 
@@ -61,7 +70,7 @@ public partial class SendingAccounts
         try
         {
             var account = await Outgoing.SaveSendingAccountAsync(_user, new(_id, _sourceMailboxId, _displayName, _fromAddress,
-                _host, _port, _useStartTls, _useAuthentication, _username, string.IsNullOrWhiteSpace(_password) ? null : _password,
+                _host, _port, UseStartTls, _useAuthentication, _username, string.IsNullOrWhiteSpace(_password) ? null : _password,
                 _enabled, _sentCopyPolicy, _sentFolder), _lifetime.Token);
             EditAccount(account);
             _accounts = _accounts.Where(item => item.Id != account.Id).Append(account).OrderBy(item => item.DisplayName).ToArray();

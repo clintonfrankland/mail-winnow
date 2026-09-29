@@ -1,6 +1,6 @@
 # MailWinnow
 
-Current shipped version: **1.19.1.126**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
+Current shipped version: **1.19.2.126**. Version metadata is maintained in `src/MailWinnow.Web/MailWinnow.Web.csproj`; every shipped task increments `BuildNumber` as documented in `VERSIONING.md`.
 
 MailWinnow is a self-hosted email filtering and selective-delivery platform for households.
 
@@ -45,7 +45,7 @@ The authenticated GET route is `/inbox/attachments/{destinationMailboxId}/{uid}/
 
 Open a local inbox message and choose **Reply** or **Reply all**. The reusable plain-text composer supports editable To/Cc/Bcc, From, subject, quoted text, and new attachments. Original attachments are not automatically included. Reply respects `Reply-To`; Reply all adds the original To/Cc recipients, removes configured self addresses, and never copies original Bcc. Threading headers are preserved from the original message. A new-message Compose entry point is reserved for a later release.
 
-Configure **Sending accounts** before sending: enter your provider's SMTP host, TLS mode (required STARTTLS or implicit TLS), port, authentication, and explicit From address. Enable the account when ready. Source-mailbox associations organize sending accounts, but existing delivery records do not securely bind the historic destination login. Choose From explicitly for replies; the app will not guess from recipient headers or old mailbox UIDs. An IMAP login is not assumed to be a valid SMTP identity. Passwords are entered only in the signed-in application and are never displayed back. Select whether the provider saves Sent copies or Mail Winnow should append a copy to the configured local Sent folder.
+Configure **Sending accounts** before sending: enter your provider's SMTP host, TLS mode (required STARTTLS or implicit TLS), port, authentication, and explicit From address. Enable the account when ready. When editing an account, the selected TLS mode remains selected and is saved with the account. Source-mailbox associations organize sending accounts, but existing delivery records do not securely bind the historic destination login. Choose From explicitly for replies; the app will not guess from recipient headers or old mailbox UIDs. An IMAP login is not assumed to be a valid SMTP identity. Passwords are entered only in the signed-in application and are never displayed back. Select whether the provider saves Sent copies or Mail Winnow should append a copy to the configured local Sent folder.
 
 Drafts are saved durably with revision checks and can be reopened from **Drafts & Outbox**. Switching inbox messages does not replace an open draft. **Send** commits an immutable outbox entry and returns without waiting for SMTP; only Worker submits mail. Duplicate submission of the same draft cannot create another outbox message. Required recipient/identity validation runs before acceptance. You can upload up to 20 files, at most 25 MiB each and 30 MiB total, within a 45 MiB encoded-message limit.
 
@@ -89,6 +89,8 @@ dotnet test MailWinnow.sln --no-build
 `Directory.Build.props` applies nullable reference types, current analyzers, and warnings-as-errors to every project. The initial EF migration was an empty baseline; later migrations define the current application schema.
 
 ## GitHub validation
+
+The GHCR publication workflow skips validation and publishing cleanly when the completed Tests run comes from a pull request, a non-`main` branch, or an unsuccessful test run. Only successful `main` push runs enter validation; the existing canonical-repository and exact-revision safety checks still fail closed for eligible runs. A failed Tests run remains visible as a failure in the Tests workflow itself.
 
 GitHub Actions runs the stable **Tests** check on pull requests to `main` and pushes to `main`. It uses the .NET 10 SDK and the same solution-wide restore, build, and full-test commands shown above. The workflow has read-only repository contents permission and is defined in [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 
